@@ -1,0 +1,21 @@
+markdown_extensions:
+    - admonition
+    - tables
+nav:
+    - Home: index.md
+    - ADRs:
+        - Overview: adr/README.md
+    - Design:
+        - Overview: design/README.md
+    - Implementation Plans:
+        - Overview: impl/README.md
+    - Investigations:
+        - Overview: investigation/README.md
+    - Plans:
+        - Overview: plan/README.md
+    - RFCs:
+        - Overview: rfc/README.md
+plugins:
+    - techdocs-core
+site_description: Documentation for rfc-api
+site_name: rfc-api
