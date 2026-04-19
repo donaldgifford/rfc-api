@@ -353,7 +353,7 @@ in RFC-0001 can be pointed at without further changes to `main`,
 
 **Middleware (admin chain + main root chain + v1 chain comes Phase 2)**
 
-- [ ] `internal/server/middleware/chain.go`: `Middleware` type
+- [x] `internal/server/middleware/chain.go`: `Middleware` type
       and `Chain(...)` helper. Project-owned, ~15 LOC, no
       third-party chain library.
 - [ ] `middleware/otel.go`: thin wrapper around
@@ -362,13 +362,13 @@ in RFC-0001 can be pointed at without further changes to `main`,
       the route closure (Phase 2) renames the span to
       `METHOD route-template` using `routectx` once the mux has
       dispatched.
-- [ ] `middleware/recover.go`: `defer/recover`, log stack via
+- [x] `middleware/recover.go`: `defer/recover`, log stack via
       `slog`, write 500 via `httperr`.
-- [ ] `middleware/requestid.go`: read `X-Request-ID` if present,
+- [x] `middleware/requestid.go`: read `X-Request-ID` if present,
       else derive from the active OTel trace ID when one exists,
       else `crypto/rand`. Stash in `r.Context()`; echo in
       response header.
-- [ ] `middleware/logger.go`: `slog` JSON access log using **OTel
+- [x] `middleware/logger.go`: `slog` JSON access log using **OTel
       logs semantic conventions, flat-dotted**:
       `http.request.method`, `http.response.status_code`,
       `url.path`, `http.route` (from `routectx`), `trace_id`,
