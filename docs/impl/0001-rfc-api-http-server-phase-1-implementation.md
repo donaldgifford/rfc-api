@@ -328,8 +328,8 @@ in RFC-0001 can be pointed at without further changes to `main`,
 
 - [ ] `internal/server/server.go`: `Deps`, `Server`, `New(Deps)`,
       `Start(ctx)`. Main-port server. Construction opens no sockets.
-- [ ] `internal/server/admin.go`: `AdminServer`,
-      `NewAdmin(config.Admin, []ReadinessProbe, *slog.Logger)`,
+- [x] `internal/server/admin.go`: `AdminServer`,
+      `NewAdmin(config.Admin, []ReadinessProbe, trace.TracerProvider, *slog.Logger)`,
       `Start(ctx)`. Admin-port server.
 - [ ] `cmd/rfc-api/serve.go`: wires an `errgroup.Group` that runs
       both servers under the signal-rooted context; either
@@ -392,11 +392,12 @@ in RFC-0001 can be pointed at without further changes to `main`,
       `{"status":"ok"}`.
 - [x] `/readyz` handler — iterates the registry, returns 200 or
       503 with the failure body above.
-- [ ] `/metrics` — `promhttp.Handler()` mounted on the admin mux
+- [x] `/metrics` — `promhttp.Handler()` mounted on the admin mux
       (main port has no `/metrics`).
-- [ ] pprof gated by `RFC_API_PPROF_ENABLED`: when true, register
+- [x] pprof gated by `RFC_API_PPROF_ENABLED`: when true, register
       `/debug/pprof/*` handlers from `net/http/pprof`; when
-      false, they 404 (not registered at all).
+      false, they 404 (not registered at all). Verified by
+      integration test with both flag values.
 
 **Baseline endpoints on main (for routing-shape testing)**
 
