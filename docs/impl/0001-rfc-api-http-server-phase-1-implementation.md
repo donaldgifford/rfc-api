@@ -326,7 +326,7 @@ in RFC-0001 can be pointed at without further changes to `main`,
 
 **Server construction + lifecycle (both servers)**
 
-- [ ] `internal/server/server.go`: `Deps`, `Server`, `New(Deps)`,
+- [x] `internal/server/server.go`: `Deps`, `Server`, `New(*Deps)`,
       `Start(ctx)`. Main-port server. Construction opens no sockets.
 - [x] `internal/server/admin.go`: `AdminServer`,
       `NewAdmin(config.Admin, []ReadinessProbe, trace.TracerProvider, *slog.Logger)`,
@@ -338,7 +338,7 @@ in RFC-0001 can be pointed at without further changes to `main`,
 - [ ] Graceful shutdown on context cancel with
       `RFC_API_SHUTDOWN_TIMEOUT` budget applied to both servers;
       force-kill path logs and returns exit-code-2.
-- [ ] `*http.Server` read/write/idle timeouts from config for the
+- [x] `*http.Server` read/write/idle timeouts from config for the
       main server. Admin server deliberately has no write timeout
       (pprof CPU profile is long-running); read timeout short.
 
@@ -401,7 +401,7 @@ in RFC-0001 can be pointed at without further changes to `main`,
 
 **Baseline endpoints on main (for routing-shape testing)**
 
-- [ ] Catch-all 404 and method-not-allowed responses use
+- [x] Catch-all 404 and method-not-allowed responses use
       `httperr.Write` so every routing miss returns RFC 7807.
       Phase 2 populates `/api/v1/*` on this mux; Phase 1 just
       proves the shape.
