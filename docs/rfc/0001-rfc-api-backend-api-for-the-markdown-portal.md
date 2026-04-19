@@ -13,7 +13,6 @@ created: 2026-04-18
 **Status:** Draft **Author:** Donald Gifford **Date:** 2026-04-18
 
 <!--toc:start-->
-
 - [Summary](#summary)
 - [Problem Statement](#problem-statement)
 - [Proposed Solution](#proposed-solution)
@@ -172,7 +171,7 @@ Operational:
   GET  /metrics                           Prometheus scrape
 
 Cross-type (corpus-wide):
-  GET  /api/v1/sources                    configured content sources
+  GET  /api/v1/types                      registered document types
   GET  /api/v1/docs                       paginated list across all types
   GET  /api/v1/search?q=...               cross-type full-text search
 

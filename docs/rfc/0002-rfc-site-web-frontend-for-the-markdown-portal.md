@@ -13,7 +13,6 @@ created: 2026-04-18
 **Status:** Draft **Author:** Donald Gifford **Date:** 2026-04-18
 
 <!--toc:start-->
-
 - [Summary](#summary)
 - [Problem Statement](#problem-statement)
 - [Proposed Solution](#proposed-solution)

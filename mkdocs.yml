@@ -14,6 +14,7 @@ nav:
         - 'DESIGN-0002: DocumentType: extensibility for multiple content types': design/0002-documenttype-extensibility-for-multiple-content-types.md
     - Implementation Plans:
         - Overview: impl/README.md
+        - 'IMPL-0001: rfc-api HTTP server phase 1 implementation': impl/0001-rfc-api-http-server-phase-1-implementation.md
     - Investigations:
         - Overview: investigation/README.md
         - 'INV-0001: Oxide RFD system: architecture case study': investigation/0001-oxide-rfd-system-architecture-case-study.md

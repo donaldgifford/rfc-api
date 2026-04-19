@@ -53,16 +53,19 @@ PostgreSQL.
 
 ## Decision
 
-Use **PostgreSQL** as the persistent datastore for `rfc-api`.
+Use **PostgreSQL 18** as the persistent datastore for `rfc-api`.
 
 - One logical database per `rfc-api` deployment, owned by the service.
 - Schema is managed by migrations shipped with the service; migrations are
   applied on startup or by an explicit job (decided in the design doc).
+- Major version pinned at **PostgreSQL 18** (released September 2025). The
+  dev `compose.yaml` runs `postgres:18-alpine` so local SQL dialect, query
+  plans, and available features match what the prod target runs against.
+  Upgrades to subsequent majors are tracked as their own decisions.
 - Full-text search is **not** committed to Postgres by this ADR. Search
-  backend selection is an open question in RFC-0001 (Meilisearch is the
-  candidate, and its location — inside `rfc-api`, inside `rfc-site`, or as
-  a sibling service — is unresolved). This ADR covers the primary
-  document/metadata store only.
+  backend selection is resolved separately in
+  [ADR-0003: Use Meilisearch for rfc-api search][adr-0003]; this ADR covers
+  the primary document/metadata store only.
 
 ## Consequences
 
@@ -141,7 +144,9 @@ Use **PostgreSQL** as the persistent datastore for `rfc-api`.
 - [RFC-0001: rfc-api — Backend API for the Markdown Portal][rfc-0001]
 - [RFC-0011: Markdown Portal][rfc-0011]
 - [ADR-0001: Use Go and the standard library net/http for rfc-api][adr-0001]
+- [ADR-0003: Use Meilisearch for rfc-api search][adr-0003]
 
 [rfc-0001]: ../rfc/0001-rfc-api-backend-api-for-the-markdown-portal.md
 [rfc-0011]: ../../INGEST_RFC.md
 [adr-0001]: ./0001-use-go-and-stdlib-net-http-for-rfc-api.md
+[adr-0003]: ./0003-use-meilisearch-for-rfc-api-search.md

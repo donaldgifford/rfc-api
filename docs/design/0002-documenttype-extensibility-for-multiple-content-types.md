@@ -295,7 +295,7 @@ a small cross-type aggregation surface kept alongside**:
 
 ```
 Cross-type (aggregation / corpus-wide):
-  GET  /api/v1/sources                   configured content sources
+  GET  /api/v1/types                     registered document types
   GET  /api/v1/docs                      paginated list across all types
   GET  /api/v1/search                    cross-type full-text search
 
@@ -388,7 +388,8 @@ parse a prefix from the id and does not call the registry to
 dispatch. The registry's jobs are:
 
 - Config validation at startup (reject duplicate prefixes).
-- Populating `/api/v1/sources` response metadata.
+- Populating the `/api/v1/types` response at request time (pure
+  registry introspection, no DB).
 - Driving the route-mount loop at startup.
 - Ingest-time parser dispatch in the worker.
 
@@ -520,8 +521,9 @@ owns the rules those endpoints must obey:
 - `GET /api/v1/docs` and `GET /api/v1/search` stay as cross-type
   aggregation endpoints. Both accept `?type=` for narrowing. Both
   are paginated (see [§Pagination](#pagination)).
-- `GET /api/v1/sources` response includes each source's declared
-  type.
+- `GET /api/v1/types` returns the registered `DocumentType` set
+  (route segment id, display prefix, title, statuses) rendered
+  from the registry at request time.
 - Per-type sub-resources (`/{type}/{id}/links`,
   `/{type}/{id}/discussion`, `/{type}/{id}/revisions`,
   `/{type}/{id}/authors`) are mounted uniformly across all
