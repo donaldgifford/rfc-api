@@ -212,7 +212,7 @@ dev tools. All services use named volumes for state so
   - `make compose-nuke` — stop and remove volumes (gated on an
     interactive confirmation or `CONFIRM=1`).
   - `make compose-logs SERVICE=<name>` — convenience tail.
-- [ ] CLAUDE.md and/or a short `docs/local-dev.md`:
+- [x] CLAUDE.md and/or a short `docs/local-dev.md`:
       one-command getting-started, port map, troubleshooting for
       `host.docker.internal` on Linux (`--add-host=host.docker.internal:host-gateway`).
 - [ ] `.gitignore` additions: `.env`, any compose override files

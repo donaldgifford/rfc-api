@@ -8,6 +8,12 @@ Early-stage skeleton. `cmd/rfc-api/main.go` is an empty `package main` stub and 
 
 Despite the empty source tree, the repo is heavily pre-wired with tooling, CI, lint, release, and documentation infrastructure — edits here are usually to that tooling, not application code.
 
+## Local development
+
+See [`docs/local-dev.md`](./docs/local-dev.md) for the runbook (getting started, port map, compose profiles, pprof workflow, troubleshooting). TL;DR: `mise install && cp .env.example .env && make compose-up && go run ./cmd/rfc-api serve`.
+
+Dev deps run in `docker compose` via profile-tagged services (`postgres`, `meilisearch` default; `keycloak`, `otel-collector`, `jaeger`, `prometheus`, `grafana`, `loki`, `alloy` opt-in). The `rfc-api` binary itself is **never** run inside compose — always host-run via `go run` or `make run-local`. `docker build` is reserved for goreleaser / CI / release.
+
 ## Commands
 
 All workflows go through the `Makefile`. Run `make help` for the full list.
