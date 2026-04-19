@@ -356,7 +356,7 @@ in RFC-0001 can be pointed at without further changes to `main`,
 - [x] `internal/server/middleware/chain.go`: `Middleware` type
       and `Chain(...)` helper. Project-owned, ~15 LOC, no
       third-party chain library.
-- [ ] `middleware/otel.go`: thin wrapper around
+- [x] `middleware/otel.go`: thin wrapper around
       `otelhttp.NewHandler`. Span-name formatter sets a
       placeholder at span-creation time; an inner wrapper inside
       the route closure (Phase 2) renames the span to
@@ -407,7 +407,7 @@ in RFC-0001 can be pointed at without further changes to `main`,
 
 **Observability baseline**
 
-- [ ] `internal/obs/tracing.go`: OTel TracerProvider from
+- [x] `internal/obs/tracing.go`: OTel TracerProvider from
       `OTEL_EXPORTER_OTLP_*` env; head-based sampler at
       `RFC_API_TRACE_SAMPLE_RATIO`; no-op provider when endpoint
       unset (dev mode).
