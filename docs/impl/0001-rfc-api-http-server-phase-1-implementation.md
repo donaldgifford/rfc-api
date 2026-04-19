@@ -215,7 +215,7 @@ dev tools. All services use named volumes for state so
 - [x] CLAUDE.md and/or a short `docs/local-dev.md`:
       one-command getting-started, port map, troubleshooting for
       `host.docker.internal` on Linux (`--add-host=host.docker.internal:host-gateway`).
-- [ ] `.gitignore` additions: `.env`, any compose override files
+- [x] `.gitignore` additions: `.env`, any compose override files
       (`compose.override.yaml`).
 - [ ] Verify a clean-clone smoke test:
       `mise install && go mod tidy && cp .env.example .env && make compose-up && go run ./cmd/rfc-api serve`
