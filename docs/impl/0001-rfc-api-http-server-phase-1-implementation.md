@@ -174,7 +174,7 @@ dev tools. All services use named volumes for state so
       `prom_data`, `grafana_data`, `loki_data`), healthchecks on
       `postgres` and `meilisearch`, and an internal bridge network
       so services resolve each other by name.
-- [ ] `.env.example` at repo root seeded with dev values that
+- [x] `.env.example` at repo root seeded with dev values that
       target the compose stack. Service-prefixed for config we
       own; upstream-standard names for external deps (see
       DESIGN-0001 §Configuration):
