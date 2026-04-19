@@ -277,7 +277,7 @@ in RFC-0001 can be pointed at without further changes to `main`,
 - [x] `go mod init github.com/donaldgifford/rfc-api`; set
       `go 1.26.1` to match `mise.toml`. _(Done in prior commit
       `e7c0314`; go.mod verified correct.)_
-- [ ] Add `docker-bake.hcl` at repo root with a `ci` target that
+- [x] Add `docker-bake.hcl` at repo root with a `ci` target that
       matches what `.github/workflows/ci.yml`'s `docker-build` job
       expects (multi-arch build, GHA cache).
 - [ ] Fix `Makefile` `run` target: point `./build/bin/repo-guardian`

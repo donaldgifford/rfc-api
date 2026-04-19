@@ -1,0 +1,56 @@
+# Keep the build context small. Only Go source, go.mod/go.sum, and the
+# stuff the build needs.
+
+# Git / CI metadata
+.git
+.github
+.gitignore
+.gitattributes
+
+# Editor / local tool state
+.claude
+.idea
+.vscode
+.DS_Store
+.env
+.env.*
+!.env.example
+
+# Docs and planning -- irrelevant to the binary
+docs
+README.md
+INGEST_RFC.md
+CLAUDE.md
+mkdocs.yml
+*.md
+
+# Local dev infra
+compose.yaml
+compose.*.yaml
+compose.override.yaml
+docker-compose.*
+deploy
+
+# Build artifacts
+build
+coverage.*
+*.out
+*.coverprofile
+
+# Test binaries
+*.test
+
+# Misc config not consumed by the runtime image
+.checkmake.ini
+.codecov.yml
+.docz.yaml
+.golangci.yml
+.goreleaser.yml
+.makefmt.yml
+.markdownlint.yaml
+.prettierrc.yaml
+.yamlfmt.yml
+.yamllint.yml
+.forge-lock.yaml
+mise.toml
+scripts
