@@ -168,7 +168,7 @@ dev tools. All services use named volumes for state so
 
 ### Tasks
 
-- [ ] Create `compose.yaml` at repo root with the services above,
+- [x] Create `compose.yaml` at repo root with the services above,
       `profiles:` tags per the table, named volumes
       (`pg_data`, `meili_data`, `keycloak_data`, `jaeger_data`,
       `prom_data`, `grafana_data`, `loki_data`), healthchecks on

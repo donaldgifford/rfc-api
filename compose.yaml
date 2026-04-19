@@ -1,0 +1,197 @@
+---
+# Local development dependency stack for rfc-api.
+#
+# The rfc-api binary is NEVER built or run inside this compose file. This
+# hosts only the external dependencies the binary talks to. The dev loop is
+# `go run ./cmd/rfc-api serve` on the host, pointing at compose-exposed
+# services on localhost:<port>. `docker build` is reserved for
+# goreleaser / CI / release.
+#
+# Services are split into profiles so developers bring up only what they
+# need. Default profile (no --profile flag) starts Postgres + Meilisearch.
+# Other profiles: auth, tracing, metrics, logs. See Makefile compose-*
+# targets for common combinations.
+#
+# See docs/local-dev.md and docs/impl/0001-*.md §Prerequisites for the full
+# port map and rationale.
+
+name: rfc-api
+
+networks:
+  rfcapi:
+    driver: bridge
+
+volumes:
+  pg_data: {}
+  meili_data: {}
+  keycloak_data: {}
+  jaeger_data: {}
+  prom_data: {}
+  grafana_data: {}
+  loki_data: {}
+
+services:
+  # -- default profile --------------------------------------------------
+
+  postgres:
+    image: postgres:18-alpine
+    environment:
+      POSTGRES_USER: rfcapi
+      POSTGRES_PASSWORD: rfcapi
+      POSTGRES_DB: rfcapi
+    ports:
+      - "5432:5432"
+    volumes:
+      - pg_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U rfcapi -d rfcapi"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+      start_period: 10s
+    networks:
+      - rfcapi
+
+  meilisearch:
+    image: getmeili/meilisearch:v1
+    environment:
+      MEILI_MASTER_KEY: ${MEILI_MASTER_KEY:-dev-master-key}
+      MEILI_ENV: development
+      MEILI_NO_ANALYTICS: "true"
+    ports:
+      - "7700:7700"
+    volumes:
+      - meili_data:/meili_data
+    healthcheck:
+      test: ["CMD", "wget", "--spider", "-q", "http://localhost:7700/health"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+      start_period: 10s
+    networks:
+      - rfcapi
+
+  # -- profile: auth ----------------------------------------------------
+
+  keycloak:
+    image: quay.io/keycloak/keycloak:26
+    command: ["start-dev", "--import-realm", "--http-port=8180"]
+    environment:
+      KC_BOOTSTRAP_ADMIN_USERNAME: admin
+      KC_BOOTSTRAP_ADMIN_PASSWORD: admin
+      KC_HEALTH_ENABLED: "true"
+      KC_METRICS_ENABLED: "true"
+    ports:
+      - "8180:8180"
+    volumes:
+      - keycloak_data:/opt/keycloak/data
+      - ./deploy/dev/keycloak:/opt/keycloak/data/import:ro
+    networks:
+      - rfcapi
+    profiles:
+      - auth
+
+  # -- profile: tracing -------------------------------------------------
+
+  otel-collector:
+    image: otel/opentelemetry-collector-contrib:latest
+    command: ["--config=/etc/otel/config.yaml"]
+    volumes:
+      - ./deploy/dev/otel/otel-collector.yaml:/etc/otel/config.yaml:ro
+    ports:
+      - "4317:4317"
+      - "4318:4318"
+    networks:
+      - rfcapi
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+    depends_on:
+      - jaeger
+    profiles:
+      - tracing
+
+  jaeger:
+    image: jaegertracing/all-in-one:latest
+    environment:
+      SPAN_STORAGE_TYPE: badger
+      BADGER_EPHEMERAL: "false"
+      BADGER_DIRECTORY_VALUE: /badger/data
+      BADGER_DIRECTORY_KEY: /badger/key
+      COLLECTOR_OTLP_ENABLED: "true"
+    ports:
+      - "16686:16686"
+    volumes:
+      - jaeger_data:/badger
+    networks:
+      - rfcapi
+    profiles:
+      - tracing
+
+  # -- profile: metrics -------------------------------------------------
+
+  prometheus:
+    image: prom/prometheus:latest
+    command:
+      - "--config.file=/etc/prometheus/prometheus.yml"
+      - "--storage.tsdb.path=/prometheus"
+      - "--web.enable-lifecycle"
+    volumes:
+      - ./deploy/dev/prometheus/prometheus.yml:/etc/prometheus/prometheus.yml:ro
+      - prom_data:/prometheus
+    ports:
+      - "9090:9090"
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+    networks:
+      - rfcapi
+    profiles:
+      - metrics
+
+  grafana:
+    image: grafana/grafana:latest
+    environment:
+      GF_SECURITY_ADMIN_USER: admin
+      GF_SECURITY_ADMIN_PASSWORD: admin
+      GF_USERS_ALLOW_SIGN_UP: "false"
+      GF_AUTH_ANONYMOUS_ENABLED: "true"
+      GF_AUTH_ANONYMOUS_ORG_ROLE: Admin
+    volumes:
+      - ./deploy/dev/grafana/provisioning:/etc/grafana/provisioning:ro
+      - grafana_data:/var/lib/grafana
+    ports:
+      - "3000:3000"
+    networks:
+      - rfcapi
+    profiles:
+      - metrics
+
+  # -- profile: logs ----------------------------------------------------
+
+  loki:
+    image: grafana/loki:latest
+    command: ["-config.file=/etc/loki/local-config.yaml"]
+    volumes:
+      - loki_data:/loki
+    ports:
+      - "3100:3100"
+    networks:
+      - rfcapi
+    profiles:
+      - logs
+
+  alloy:
+    image: grafana/alloy:latest
+    command:
+      - "run"
+      - "--server.http.listen-addr=0.0.0.0:12345"
+      - "--storage.path=/var/lib/alloy/data"
+      - "/etc/alloy/config.alloy"
+    volumes:
+      - ./deploy/dev/alloy/config.alloy:/etc/alloy/config.alloy:ro
+      - /var/run/docker.sock:/var/run/docker.sock:ro
+    ports:
+      - "12345:12345"
+    networks:
+      - rfcapi
+    profiles:
+      - logs
