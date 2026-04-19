@@ -305,7 +305,7 @@ in RFC-0001 can be pointed at without further changes to `main`,
 
 **Config**
 
-- [ ] `internal/config/config.go`: `Server` and `Admin` structs
+- [x] `internal/config/config.go`: `Server` and `Admin` structs
       covering every key in DESIGN-0001 §Configuration —
       service-prefixed (`RFC_API_LISTEN`, `RFC_API_ADMIN_LISTEN`,
       `RFC_API_PPROF_ENABLED`, `RFC_API_LOG_LEVEL`,
@@ -314,13 +314,15 @@ in RFC-0001 can be pointed at without further changes to `main`,
       `RFC_API_WEBHOOK_SECRET`, timeouts) plus upstream-standard
       names (`DATABASE_URL`, `MEILI_MASTER_KEY`,
       `OTEL_EXPORTER_OTLP_ENDPOINT`).
-- [ ] Loader precedence: defaults → optional `/etc/rfc-api/config.yaml`
-      → env vars (struct-tag bound) → CLI flags.
-- [ ] No `os.Getenv` outside this package. Add a lint rule or at
-      minimum a unit test that greps the tree.
-- [ ] Required-fields validation (`DATABASE_URL`,
+- [x] Loader precedence: defaults → optional `/etc/rfc-api/config.yaml`
+      → env vars → CLI flags. Each source tested individually +
+      combined precedence.
+- [x] No `os.Getenv` outside this package. Enforced by
+      `internal/config/lint_test.go:TestNoOsGetenvOutsideConfig`
+      which walks `cmd/` + `internal/` and fails on any hit.
+- [x] Required-fields validation (`DATABASE_URL`,
       `MEILI_MASTER_KEY`, `RFC_API_WEBHOOK_SECRET`) — fails fast at
-      startup, clear error message naming which var is missing.
+      startup, clear error message naming which var(s) are missing.
 
 **Server construction + lifecycle (both servers)**
 
