@@ -344,7 +344,7 @@ in RFC-0001 can be pointed at without further changes to `main`,
 
 **Route-metadata propagation**
 
-- [ ] `internal/server/routectx/routectx.go`: tiny package owning
+- [x] `internal/server/routectx/routectx.go`: tiny package owning
       the context key and `With(ctx, typeID, pattern)` /
       `From(ctx) (Route, bool)` helpers. Used by handlers, logger,
       metrics middleware, span-name setter — everything that
