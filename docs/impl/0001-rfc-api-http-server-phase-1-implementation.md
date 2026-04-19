@@ -202,7 +202,7 @@ dev tools. All services use named volumes for state so
   - `alloy/config.alloy` — tail compose container logs into
     Loki with labels that mirror the span/log correlation
     story in DESIGN-0001 §Observability hooks.
-- [ ] `Makefile` additions (preserve existing Uber-style target
+- [x] `Makefile` additions (preserve existing Uber-style target
       conventions):
   - `make compose-up` — default profile only (Postgres + Meilisearch).
   - `make compose-up-auth` — default + `auth`.

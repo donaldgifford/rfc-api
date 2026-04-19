@@ -107,6 +107,51 @@ run-local: build ## Run exporter with local config
 	@ $(MAKE) --no-print-directory log-$@
 	@$(BIN_DIR)/$(PROJECT_NAME)
 
+###############
+##@ Development Dependencies
+
+COMPOSE_ALL_PROFILES := --profile auth --profile tracing --profile metrics --profile logs
+
+.PHONY: compose-up compose-up-auth compose-up-obs compose-up-full
+.PHONY: compose-down compose-nuke compose-logs
+
+compose-up: ## Start default dependencies (postgres + meilisearch)
+	@ $(MAKE) --no-print-directory log-$@
+	@docker compose up -d
+
+compose-up-auth: ## Start default + keycloak (auth profile)
+	@ $(MAKE) --no-print-directory log-$@
+	@docker compose --profile auth up -d
+
+compose-up-obs: ## Start default + tracing + metrics + logs
+	@ $(MAKE) --no-print-directory log-$@
+	@docker compose --profile tracing --profile metrics --profile logs up -d
+
+compose-up-full: ## Start every profile
+	@ $(MAKE) --no-print-directory log-$@
+	@docker compose $(COMPOSE_ALL_PROFILES) up -d
+
+compose-down: ## Stop compose services (keeps volumes)
+	@ $(MAKE) --no-print-directory log-$@
+	@docker compose $(COMPOSE_ALL_PROFILES) down
+
+compose-nuke: ## Stop services and DELETE all volumes (use CONFIRM=1 to skip prompt)
+	@ $(MAKE) --no-print-directory log-$@
+	@if [ "$(CONFIRM)" != "1" ]; then \
+		printf "This will DESTROY all compose volume data. Continue? [y/N] "; \
+		read -r REPLY; \
+		case "$$REPLY" in \
+			[yY]|[yY][eE][sS]) ;; \
+			*) echo "aborted."; exit 1 ;; \
+		esac; \
+	fi
+	@docker compose $(COMPOSE_ALL_PROFILES) down -v
+	@echo "✓ Compose volumes removed"
+
+compose-logs: ## Tail compose logs (usage: make compose-logs SERVICE=postgres; omit SERVICE for all)
+	@ $(MAKE) --no-print-directory log-$@
+	@docker compose logs -f --tail=100 $(SERVICE)
+
 ## License Compliance
 
 license-check: ## Check dependency licenses against allowed list
