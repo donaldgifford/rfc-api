@@ -152,6 +152,60 @@ compose-logs: ## Tail compose logs (usage: make compose-logs SERVICE=postgres; o
 	@ $(MAKE) --no-print-directory log-$@
 	@docker compose logs -f --tail=100 $(SERVICE)
 
+###############
+##@ Smoke Tests
+
+BIN := $(BIN_DIR)/$(PROJECT_NAME)
+
+.PHONY: smoke smoke-help smoke-version smoke-unknown smoke-serve smoke-work
+
+smoke: smoke-help smoke-version smoke-unknown smoke-serve smoke-work ## Run every smoke test
+	@echo "✓ all smoke tests passed"
+
+smoke-help: build ## CLI with no args prints usage, exits 0
+	@ $(MAKE) --no-print-directory log-$@
+	@out=$$($(BIN) 2>&1); rc=$$?; \
+		[ $$rc -eq 0 ] || { echo "✗ expected exit 0, got $$rc"; exit 1; }; \
+		echo "$$out" | grep -q "Usage:" || { echo "✗ no Usage: in output"; exit 1; }; \
+		echo "✓ help"
+
+smoke-version: build ## `rfc-api version` prints version line, exits 0
+	@ $(MAKE) --no-print-directory log-$@
+	@out=$$($(BIN) version 2>&1); rc=$$?; \
+		[ $$rc -eq 0 ] || { echo "✗ expected exit 0, got $$rc"; exit 1; }; \
+		echo "$$out" | grep -qE "^rfc-api .+\\(.+\\)$$" || { echo "✗ unexpected version output: $$out"; exit 1; }; \
+		echo "✓ version"
+
+smoke-unknown: build ## Unknown subcommand exits 1
+	@ $(MAKE) --no-print-directory log-$@
+	@$(BIN) not-a-real-command >/dev/null 2>&1; rc=$$?; \
+		[ $$rc -eq 1 ] || { echo "✗ expected exit 1, got $$rc"; exit 1; }; \
+		echo "✓ unknown"
+
+smoke-serve: build ## `rfc-api serve` handles SIGTERM cleanly (exit 0)
+	@ $(MAKE) --no-print-directory log-$@
+	@set -e; \
+		$(BIN) serve >/tmp/rfc-api.smoke-serve.log 2>&1 & \
+		pid=$$!; \
+		sleep 0.5; \
+		kill -TERM $$pid; \
+		wait $$pid; rc=$$?; \
+		[ $$rc -eq 0 ] || { echo "✗ expected exit 0, got $$rc"; cat /tmp/rfc-api.smoke-serve.log; exit 1; }; \
+		grep -q '"serve stopped"' /tmp/rfc-api.smoke-serve.log || { echo "✗ no 'serve stopped' log"; cat /tmp/rfc-api.smoke-serve.log; exit 1; }; \
+		echo "✓ serve"
+
+smoke-work: build ## `rfc-api work` handles SIGTERM cleanly (exit 0)
+	@ $(MAKE) --no-print-directory log-$@
+	@set -e; \
+		$(BIN) work >/tmp/rfc-api.smoke-work.log 2>&1 & \
+		pid=$$!; \
+		sleep 0.5; \
+		kill -TERM $$pid; \
+		wait $$pid; rc=$$?; \
+		[ $$rc -eq 0 ] || { echo "✗ expected exit 0, got $$rc"; cat /tmp/rfc-api.smoke-work.log; exit 1; }; \
+		grep -q '"worker stopped"' /tmp/rfc-api.smoke-work.log || { echo "✗ no 'worker stopped' log"; cat /tmp/rfc-api.smoke-work.log; exit 1; }; \
+		echo "✓ work"
+
 ## License Compliance
 
 license-check: ## Check dependency licenses against allowed list

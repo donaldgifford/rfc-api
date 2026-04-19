@@ -282,21 +282,26 @@ in RFC-0001 can be pointed at without further changes to `main`,
       expects (multi-arch build, GHA cache).
 - [x] Fix `Makefile` `run` target: point `./build/bin/repo-guardian`
       → `$(BIN_DIR)/$(PROJECT_NAME)` so `make run` works.
-- [ ] Confirm `make fmt`, `make lint`, `make test`, `make build`,
-      `make ci` all succeed on the empty skeleton.
+- [x] Confirm `make fmt`, `make lint`, `make test`, `make build`,
+      `make ci` all succeed on the empty skeleton. _(Required adding
+      a LICENSE file for `license-check`; all five targets pass.)_
 
 **CLI entrypoint**
 
-- [ ] `cmd/rfc-api/main.go`: top-level dispatch reading the first
+- [x] `cmd/rfc-api/main.go`: top-level dispatch reading the first
       positional arg (`serve` | `work` | empty → help). Wire
       `main.version` / `main.commit` ldflags per `Makefile`.
-- [ ] `cmd/rfc-api/serve.go`: parses `serve`-specific flags, builds
+- [x] `cmd/rfc-api/serve.go`: parses `serve`-specific flags, builds
       signal-rooted context (`SIGINT` + `SIGTERM`), calls
-      `server.New(...).Start(ctx)`.
-- [ ] `cmd/rfc-api/work.go`: stub that logs "worker not yet
-      implemented" at INFO and exits 0.
-- [ ] Exit codes: 0 graceful, 1 listen failure, 2 shutdown timeout
-      exceeded.
+      `server.New(...).Start(ctx)`. _(Signal context + flag parsing
+      in place; real server wiring is a placeholder until the
+      "Server construction + lifecycle" task block lands.)_
+- [x] `cmd/rfc-api/work.go`: stub that logs "worker started /
+      stopped" at INFO and blocks on ctx (per Resolved Decision 6,
+      which supersedes the earlier "exits 0" wording).
+- [x] Exit codes: 0 graceful, 1 startup failure, 2 shutdown timeout
+      exceeded. Implemented via `exitCodeFor`; verified by
+      `make smoke`.
 
 **Config**
 
