@@ -429,14 +429,19 @@ in RFC-0001 can be pointed at without further changes to `main`,
 
 **Error envelope**
 
-- [ ] `internal/server/httperr/httperr.go`: `Write(w, r, err)`
+- [x] `internal/server/httperr/httperr.go`: `Write(w, r, err)`
       maps domain sentinels → status + problem+json body per
-      DESIGN-0001 §Error handling table.
-- [ ] `internal/domain/errors.go`: sentinel errors (`ErrNotFound`,
+      DESIGN-0001 §Error handling table. Uses `errors.Is` so
+      wrapped errors classify by root cause.
+- [x] `internal/domain/errors.go`: sentinel errors (`ErrNotFound`,
       `ErrInvalidInput`, `ErrConflict`, `ErrUpstream`).
-- [ ] Problem body includes `request_id` pulled from context.
-- [ ] Safe `detail` — test that an injected internal error does
-      not surface paths, SQL, or stack.
+- [x] Problem body includes `request_id` pulled from context
+      (via the `internal/server/reqctx` helper package).
+- [x] Safe `detail` — 500 responses emit a fixed
+      `"an internal error occurred"` detail; classified (<500)
+      responses surface the error message. Tested with an
+      injected error containing SQL + password; body contains
+      neither.
 
 **Tests (Phase 1 scope)**
 
