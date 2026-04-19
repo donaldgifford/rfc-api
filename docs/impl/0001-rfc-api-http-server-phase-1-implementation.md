@@ -187,7 +187,7 @@ dev tools. All services use named volumes for state so
       `OTEL_EXPORTER_OTLP_ENDPOINT=http://localhost:4317`.
       `.env` is gitignored; developer copies `.env.example` on
       first run.
-- [ ] `deploy/dev/` tree with per-service configs:
+- [x] `deploy/dev/` tree with per-service configs:
   - `keycloak/rfc-api-realm.json` — seeded realm + dev clients
     (`rfc-api` resource server, `rfc-site` public client).
   - `otel/otel-collector.yaml` — OTLP receivers; exporters to
