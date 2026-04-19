@@ -377,20 +377,20 @@ in RFC-0001 can be pointed at without further changes to `main`,
 
 **Readiness probe registry**
 
-- [ ] `internal/server/readiness.go`: `ReadinessProbe` interface
-      (`Name() string; Check(ctx) error`). `AdminServer`
-      constructor takes `[]ReadinessProbe`, iterates on
-      `/readyz`, aggregates failures into the response body with
-      probe names — `{"status":"not_ready","failures":[{"probe":"postgres","error":"…"}]}`.
-- [ ] Seed Phase 1 with an `alwaysReady{}` probe so the endpoint
+- [x] `internal/server/readiness.go`: `ReadinessProbe` interface
+      (`Name() string; Check(ctx) error`). `HealthReady([]ReadinessProbe)`
+      factory returns the handler; on any failure returns 503 with
+      `{"status":"not_ready","failures":[{"probe":...,"error":...}]}`
+      listing every failing probe (not short-circuiting).
+- [x] Seed Phase 1 with an `AlwaysReady{}` probe so the endpoint
       is wired end-to-end. Postgres probe lands in Phase 2 when
       the store arrives.
 
 **Admin endpoints**
 
-- [ ] `/healthz` handler — unconditional 200 JSON
+- [x] `/healthz` handler — unconditional 200 JSON
       `{"status":"ok"}`.
-- [ ] `/readyz` handler — iterates the registry, returns 200 or
+- [x] `/readyz` handler — iterates the registry, returns 200 or
       503 with the failure body above.
 - [ ] `/metrics` — `promhttp.Handler()` mounted on the admin mux
       (main port has no `/metrics`).
