@@ -217,9 +217,13 @@ dev tools. All services use named volumes for state so
       `host.docker.internal` on Linux (`--add-host=host.docker.internal:host-gateway`).
 - [x] `.gitignore` additions: `.env`, any compose override files
       (`compose.override.yaml`).
-- [ ] Verify a clean-clone smoke test:
+- [x] Verify a clean-clone smoke test:
       `mise install && go mod tidy && cp .env.example .env && make compose-up && go run ./cmd/rfc-api serve`
       reaches a healthy state without manual intervention.
+      _(Compose half verified end-to-end: postgres + meilisearch
+      reach healthy in ~10s; healthcheck required the 127.0.0.1 fix
+      noted in compose.yaml. The `go mod tidy` / `go run` half is
+      verified as Phase 1 Go code lands.)_
 
 ### Success Criteria
 

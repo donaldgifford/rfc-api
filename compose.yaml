@@ -63,7 +63,9 @@ services:
     volumes:
       - meili_data:/meili_data
     healthcheck:
-      test: ["CMD", "wget", "--spider", "-q", "http://localhost:7700/health"]
+      # Force IPv4: container's /etc/hosts resolves `localhost` to ::1 only,
+      # but meilisearch binds on 127.0.0.1, so `localhost` gets ECONNREFUSED.
+      test: ["CMD", "wget", "--spider", "-q", "http://127.0.0.1:7700/health"]
       interval: 5s
       timeout: 3s
       retries: 10
