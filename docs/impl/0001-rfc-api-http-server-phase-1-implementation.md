@@ -280,7 +280,7 @@ in RFC-0001 can be pointed at without further changes to `main`,
 - [x] Add `docker-bake.hcl` at repo root with a `ci` target that
       matches what `.github/workflows/ci.yml`'s `docker-build` job
       expects (multi-arch build, GHA cache).
-- [ ] Fix `Makefile` `run` target: point `./build/bin/repo-guardian`
+- [x] Fix `Makefile` `run` target: point `./build/bin/repo-guardian`
       → `$(BIN_DIR)/$(PROJECT_NAME)` so `make run` works.
 - [ ] Confirm `make fmt`, `make lint`, `make test`, `make build`,
       `make ci` all succeed on the empty skeleton.

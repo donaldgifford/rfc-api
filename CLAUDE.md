@@ -30,7 +30,7 @@ All workflows go through the `Makefile`. Run `make help` for the full list.
 - `make release-local` — `goreleaser --snapshot --clean --skip=publish --skip=sign`.
 - `make release TAG=vX.Y.Z` — tags and pushes; the `release.yml` workflow does the rest.
 
-Note: `make run` currently points to `./build/bin/repo-guardian` (stale — likely a copy-paste bug to fix if you run it). `make run-local` uses the correct `$(BIN_DIR)/$(PROJECT_NAME)` path.
+Note: `make run` builds and runs the binary (`$(BIN_DIR)/$(PROJECT_NAME)`). `make run-local` does the same thing via a separate target — the two are effectively aliases at this point; consolidate later if the distinction is never used.
 
 ## Toolchain
 
