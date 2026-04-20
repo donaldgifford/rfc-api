@@ -106,9 +106,12 @@ ships, changes become migrations rather than rewrites.
       *Installed via `github:golang-migrate/migrate@v4.18.1` with
       the postgres driver precompiled. `mise exec -- migrate --version`
       prints `4.18.1`.*
-- [ ] Create `db/migrations/` with forward-only `.sql` files numbered
+- [x] Create `db/migrations/` with forward-only `.sql` files numbered
       `0001_init.sql`, `0002_*.sql`, …
-- [ ] Schema v1:
+      *Shipped `0001_init.up.sql` + `0001_init.down.sql`. Verified against
+      `postgres:18-alpine` via docker-compose: up succeeds, idempotent on
+      re-run ("no change"), down reverses cleanly, re-up works.*
+- [x] Schema v1:
   - `documents` — primary table. Columns: `id text PRIMARY KEY` (canonical
     display id, `RFC-0001`), `type text NOT NULL` (FK-like to registry),
     `title text NOT NULL`, `status text`, `body text`, `created_at
