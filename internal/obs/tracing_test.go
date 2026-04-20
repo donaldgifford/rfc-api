@@ -30,3 +30,24 @@ func TestNewTracerProvider_NoEndpointIsNoop(t *testing.T) {
 		t.Errorf("Shutdown() error = %v, want nil for no-op provider", err)
 	}
 }
+
+func TestNewTracerProvider_SDKWhenEndpointSet(t *testing.T) {
+	t.Parallel()
+
+	// otlptracegrpc.New defers the dial; an unreachable endpoint
+	// still constructs successfully. This exercises the SDK branch
+	// (exporter + resource + sampler + batcher) for coverage.
+	tp, err := obs.NewTracerProvider(
+		t.Context(),
+		config.OTel{OTLPEndpoint: "http://127.0.0.1:14317", TraceSampleRatio: 0.05},
+		"test-version", "test-commit",
+	)
+	if err != nil {
+		t.Fatalf("NewTracerProvider(sdk) error = %v", err)
+	}
+	if err := tp.Shutdown(t.Context()); err != nil {
+		// Unreachable collector can surface an error on shutdown;
+		// the path is still exercised.
+		t.Logf("Shutdown(sdk) error = %v (non-fatal)", err)
+	}
+}

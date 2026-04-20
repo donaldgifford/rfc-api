@@ -717,17 +717,20 @@ before Phase 3 of RFC-0001 (real cluster deploy) is storage.
 
 **Coverage + hygiene**
 
-- [ ] `make test-coverage` above 80% on every package in
+- [x] `make test-coverage` above 80% on every package in
       `internal/`.
-- [ ] `golangci-lint` clean at Uber-style defaults; no
+- [x] `golangci-lint` clean at Uber-style defaults; no
       `//nolint` without an inline justification comment.
 - [ ] `govulncheck ./...` clean; Trivy CI job green.
-- [ ] `go-licenses` reports only allowed licenses per
+      **Current state:** 5 stdlib vulns reported (all fixed in Go
+      1.26.2). We stay on 1.26.1 per ADR-0001; patch bump tracked
+      as a follow-up — no action in IMPL-0001 scope.
+- [x] `go-licenses` reports only allowed licenses per
       `Makefile` `license-check`.
 
 **Release smoke**
 
-- [ ] `make release-local` produces a snapshot image that boots
+- [x] `make release-local` produces a snapshot image that boots
       and responds on every baseline endpoint (main port for
       `/api/v1/*`, admin port for ops).
 - [ ] Soak test: run `rfc-api serve` for 60 minutes under a
@@ -735,6 +738,11 @@ before Phase 3 of RFC-0001 (real cluster deploy) is storage.
       snapshots at intervals via `make pprof-heap` /
       `make pprof-goroutine`, assert no leak (RSS stable within
       GC variance, `runtime.NumGoroutine` bounded).
+      **Deferred to a scheduled run** — the smoke harness
+      (`make smoke-serve`) exercises the boot + shutdown path on
+      every CI run; the 60-minute soak lives in a separate
+      schedule because it's too slow for PR blocking. Not a
+      blocker for IMPL-0001 sign-off.
 
 Note: Helm chart, Kubernetes manifests, Argo `Application`, and
 real deploy plumbing are **out of scope** for IMPL-0001. They
