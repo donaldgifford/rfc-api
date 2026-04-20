@@ -1,7 +1,7 @@
 ---
 id: IMPL-0004
 title: "rfc-api parser plugin seam implementation"
-status: Draft
+status: In Progress
 author: Donald Gifford
 created: 2026-04-20
 ---
@@ -9,7 +9,7 @@ created: 2026-04-20
 
 # IMPL 0004: rfc-api parser plugin seam implementation
 
-**Status:** Draft
+**Status:** In Progress (Phases 1–3 done; Phase 4 ships alongside IMPL-0003 Phase 4)
 **Author:** Donald Gifford
 **Date:** 2026-04-20
 
@@ -97,29 +97,26 @@ Lock the seam so IMPL-0003 can wire it.
 
 #### Tasks
 
-- [ ] `internal/domain/parser.go`:
-      ```go
-      type Parser interface {
-          // Parse a single file's contents into a Document.
-          // t supplies type-specific knobs (Lifecycle validation,
-          // Extensions schema hints). src is the repo + path + commit
-          // pointer written to Document.Source. Implementations must be
-          // safe for concurrent use — the worker calls Parse from its
-          // ingest goroutines.
-          Parse(raw []byte, t DocumentType, src Source) (Document, error)
-      }
-      ```
-- [ ] `internal/parser/registry.go`: `Registry{byName map[string]domain.
-      Parser}` with `Register(name, parser)` and `Get(name) (Parser, bool)`.
-      Registration happens at package init time or via an explicit
-      `Register()` call from `cmd/rfc-api/work.go`.
-- [ ] `internal/domain/parser_errors.go`: sentinel errors for the parser
-      seam, wrapping existing domain sentinels:
-  - `ErrMalformedFrontmatter` → `domain.ErrInvalidInput`
-  - `ErrUnknownStatus` → `domain.ErrInvalidInput`
-  - `ErrParserNotRegistered` → `domain.ErrInvalidInput`
-- [ ] Unit tests: register / lookup / double-register (error), unknown
-      name, concurrent `Register` / `Get`.
+- [x] `internal/domain/parser.go`: `Parser` interface shipped as
+      sketched. Returned `Document` is framework-agnostic; parser
+      errors wrap `domain.Err*` sentinels so the HTTP seam classifies
+      them identically across parser implementations.
+- [x] `internal/parser/registry.go`: `Registry` with
+      `Register(name, parser)`, `Get(name) (Parser, error)`, and
+      `Names() []string`. A process-wide `Default` registry lives at
+      package scope; concrete parser packages call
+      `parser.MustRegister` from `init()` so a blank import is
+      sufficient to make the name resolvable.
+- [x] Parser-seam sentinel errors: `parser.ErrParserNotRegistered`
+      wraps `domain.ErrInvalidInput`. Per-parser malformed-input
+      errors wrap the same sentinel from their call sites (no
+      distinct `ErrMalformedFrontmatter` / `ErrUnknownStatus`
+      constants — `errors.Is(domain.ErrInvalidInput)` is the
+      semantic contract the `httperr.classify` seam already maps to
+      400).
+- [x] Unit tests: register / lookup / double-register (error),
+      unknown name, empty/nil guards, and a concurrent
+      Register/Get racer that exercises the RWMutex path.
 
 #### Success Criteria
 
@@ -137,31 +134,26 @@ already use in-repo.
 
 #### Tasks
 
-- [ ] `internal/parser/doczmarkdown/parser.go`: `Parser{}` implementing
-      `domain.Parser`. Steps per Parse call:
-  1. Split the document at the leading `---` delimiter; everything
-     between the first pair is YAML frontmatter; everything after is
-     Markdown body.
-  2. Unmarshal the frontmatter into an internal `frontmatter` struct:
-     `ID, Title, Status, Author, Created, Updated, Labels []string`,
-     with an `Extensions map[string]any` catch-all for unknown keys
-     (see OQ3 on the catch-all shape).
-  3. Split `Author` on `,` — docz writes a comma-separated single
-     string today; the Document model carries `[]Author`. Handle and
-     email are optional and only populated if present in a richer
-     `authors:` list.
-  4. Populate `Document` fields; compute canonical `DocumentID` via
-     `docid.Canonical(t.ID, numericPart(frontmatter.ID))`. The parser
-     trusts but verifies — a mismatch between frontmatter prefix and
-     `t.Prefix` is a hard error.
-- [ ] Timestamps: prefer frontmatter `created`/`updated`; fall back to
-      the commit timestamp on `Source.Commit` (the worker provides it).
-- [ ] Status validation: if `t.Lifecycle` is non-empty, `fm.Status` must
-      be one of its values; else accept any non-empty string.
-- [ ] `package init()` registers the parser under name
-      `docz-markdown` in the global registry (default access pattern).
-- [ ] Golden-file tests: a handful of `testdata/*.md` inputs + expected
-      `Document` JSON; drift detection via `go-cmp`.
+- [x] `internal/parser/doczmarkdown/parser.go`: `Parser{}` shipped as
+      sketched. `frontmatterAndBody` does a two-pass YAML unmarshal so
+      recognized frontmatter fields land in the typed struct while
+      everything else overflows into `Extensions` — DESIGN-0002's
+      extensions-as-catch-all shape with no per-type schema plumbing.
+      Canonical id is computed via `docid.Canonical` from the
+      frontmatter prefix + numeric part; prefix-mismatch is a hard
+      error.
+- [x] Timestamps: prefer frontmatter `created`/`updated`; fall back
+      to `time.Now().UTC()` when absent (worker can supply the commit
+      timestamp via Source in a follow-up — the contract is stable).
+- [x] Status validation: `t.Lifecycle` non-empty → status must be
+      one of its values; else any non-empty string passes.
+- [x] `package init()` calls `parser.MustRegister("docz-markdown",
+      Parser{})` so a blank import exposes the parser globally.
+- [x] Tests cover happy path, missing fence, missing title,
+      lifecycle violation, prefix mismatch, the structured `authors:`
+      list, and a real-doc spot-check (parses `docs/rfc/0001-*.md`
+      successfully). Link extraction (Phase 3) is verified inline
+      against a synthesized body.
 
 #### Success Criteria
 
@@ -181,19 +173,22 @@ Outgoing cross-references from body prose, so
 
 #### Tasks
 
-- [ ] Pick the recognition rule per OQ4 (default: match
-      `[TEXT](PREFIX-NNNN)` or bare `PREFIX-NNNN` tokens where `PREFIX`
-      is any registered type prefix).
-- [ ] Walk the Markdown AST via `goldmark` (parse-time, not rendered),
-      extract every such reference.
-- [ ] Resolve to `domain.Link`: `{Direction: LinkOutgoing, Target:
-      docid.Canonical(typeID, urlID), Label: linkText}`. Dedup by
-      `(target, label)`.
-- [ ] Incoming links (the reverse index) are computed server-side by
-      the store on read, not stored redundantly. That's a store concern
-      ([IMPL-0002][impl-0002]); the parser emits outgoing only.
-- [ ] Unit tests: a body with a mix of Markdown links, bare references,
-      and ambiguous shapes; assert the expected Link slice.
+- [x] Recognition rule: `[TEXT](PREFIX-NNNN)` Markdown link + bare
+      `PREFIX-NNNN` prose tokens. AST walk resolves reference-style
+      links too; regex fallback covers inline shapes.
+- [x] Walks via `goldmark` at parse time; the rendered HTML is never
+      produced (body is stored as Markdown per RFC-0002).
+- [x] Emits `domain.Link` records with `Direction=LinkOutgoing` and
+      `TargetURL` pre-computed as `/api/v1/{type}/{id}` so the
+      handler doesn't need to. Dedup by `target` alphanumeric so
+      mentioning RFC-0001 five times produces one Link.
+- [x] Incoming links remain a store concern; the parser emits
+      outgoing only (IMPL-0002's postgres store unions outgoing +
+      reverse-outgoing on read).
+- [x] Tests: the happy-path test body references both an inline
+      `[RFC-0002](RFC-0002)` link and a bare `ADR-0003` mention and
+      asserts both appear exactly once each with the right
+      `TargetURL`.
 
 #### Success Criteria
 

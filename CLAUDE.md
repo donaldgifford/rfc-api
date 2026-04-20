@@ -30,6 +30,14 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 - `internal/worker/githubsource/` — GitHub access seam (`Client`) built on `go-github/v67` + `ghinstallation/v2`. Supports App-based auth (prod) and a PAT fallback (dev); rate-limit retry with bounded backoff (`withRetry`); `ListFiles`/`GetFile`/`ListPullRequestsForFile`. Unit-tested via httptest against a mux at `/api/v3/*`.
 - `internal/worker/queue/` — Postgres-backed job queue. `Queue` has `Enqueue/Lease/Succeed/Fail/Depth`; `Lease` uses a CTE + `FOR UPDATE SKIP LOCKED` so N workers coordinate without an external broker. `Leaser` owns the poll loop + per-kind concurrency semaphore + panic recovery. Five Prometheus metrics (`rfc_api_worker_jobs_*` + `queue_depth`) live on `obs.Metrics` and render on the worker's `/metrics`. Integration tests gated `//go:build integration`.
 
+[IMPL-0004][impl-0004] is **in progress**. Phases 1–3 complete:
+
+- `internal/domain/parser.go` — `Parser` interface; handlers receive `(raw []byte, DocumentType, Source)` and emit a framework-agnostic `Document`.
+- `internal/parser/` — `Registry` with `Register/Get/Names`; `Default` is the process-wide registry so parser packages register at `init()`.
+- `internal/parser/doczmarkdown/` — real parser for docz Markdown (YAML frontmatter + body). Two-pass YAML unmarshal isolates known fields vs. `Extensions` catch-all; canonical id, lifecycle validation, and structured authors all enforced. Link extraction via goldmark AST walk + regex fallback, dedup'd, with pre-computed `TargetURL`. Phase 4 (fake-type end-to-end harness) ships in step with IMPL-0003 Phase 4.
+
+[impl-0004]: ./docs/impl/0004-rfc-api-parser-plugin-seam-implementation.md
+
 [impl-0001]: ./docs/impl/0001-rfc-api-http-server-phase-1-implementation.md
 [impl-0002]: ./docs/impl/0002-rfc-api-postgresql-store-implementation.md
 [impl-0003]: ./docs/impl/0003-rfc-api-sync-worker-implementation.md
