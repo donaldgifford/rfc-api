@@ -26,15 +26,42 @@ type Route struct {
 	Pattern string
 }
 
-// ctxKey is an unexported type so callers can't forge routectx keys.
-type ctxKey struct{}
+// ctxKey and captureKey are unexported types so callers can't forge
+// routectx keys.
+type (
+	ctxKey     struct{}
+	captureKey struct{}
+)
+
+// Capture is a mutable route slot installed before the mux has
+// dispatched. Middleware that needs the matched pattern *after*
+// ServeHTTP returns (metrics, access-log — anything in the outer
+// wrap chain that can't read a derived context) installs a Capture
+// via WithCapture, then reads it back post-dispatch. The withRoute
+// closure populates the capture in addition to setting a derived
+// context, so both pre- and post-handler readers see the same value.
+type Capture struct {
+	Route Route
+}
 
 // With returns a derived context carrying the given route metadata.
+// If ctx has a Capture installed by WithCapture, With also writes
+// the route into the capture so outer middleware can read it
+// post-dispatch.
 func With(ctx context.Context, typeID, pattern string) context.Context {
-	return context.WithValue(ctx, ctxKey{}, Route{
-		TypeID:  typeID,
-		Pattern: pattern,
-	})
+	route := Route{TypeID: typeID, Pattern: pattern}
+	if capture, ok := ctx.Value(captureKey{}).(*Capture); ok && capture != nil {
+		capture.Route = route
+	}
+	return context.WithValue(ctx, ctxKey{}, route)
+}
+
+// WithCapture installs a fresh *Capture on ctx. Returns the new
+// context and the capture pointer the caller should read after
+// ServeHTTP returns.
+func WithCapture(ctx context.Context) (context.Context, *Capture) {
+	c := &Capture{}
+	return context.WithValue(ctx, captureKey{}, c), c
 }
 
 // From returns the Route stashed on ctx, and a bool that's false when

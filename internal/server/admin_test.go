@@ -13,6 +13,7 @@ import (
 	"go.opentelemetry.io/otel/trace/noop"
 
 	"github.com/donaldgifford/rfc-api/internal/config"
+	"github.com/donaldgifford/rfc-api/internal/obs"
 	"github.com/donaldgifford/rfc-api/internal/server"
 )
 
@@ -67,6 +68,7 @@ func TestAdminServer_Endpoints(t *testing.T) {
 		},
 		[]server.ReadinessProbe{server.AlwaysReady{}},
 		noop.NewTracerProvider(),
+		obs.NewMetrics(),
 		quietLogger(),
 	)
 
@@ -151,6 +153,7 @@ func TestAdminServer_PprofEnabled(t *testing.T) {
 		config.Admin{Listen: addr, ReadTimeout: 5 * time.Second, PprofEnabled: true},
 		[]server.ReadinessProbe{server.AlwaysReady{}},
 		noop.NewTracerProvider(),
+		obs.NewMetrics(),
 		quietLogger(),
 	)
 

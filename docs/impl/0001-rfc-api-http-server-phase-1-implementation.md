@@ -603,7 +603,7 @@ what Phase 2 proves.
       registration stashes `routectx` on each request's context
       before calling the handler. Every per-type and cross-type
       route uses it.
-- [ ] Inner wrapper inside `withRoute` renames the OTel server
+- [x] Inner wrapper inside `withRoute` renames the OTel server
       span to `METHOD pattern` once the mux has dispatched.
 - [x] Webhook route registered on main mux (outside v1 chain)
       with `VerifyGitHubHMAC` as a per-route wrap.
@@ -682,25 +682,25 @@ before Phase 3 of RFC-0001 (real cluster deploy) is storage.
 
 **Metrics**
 
-- [ ] `middleware/metrics.go`: Prometheus histogram + counter,
+- [x] `middleware/metrics.go`: Prometheus histogram + counter,
       labels `method`, `route`, `status`. **`route` is read from
       `routectx`**, not `r.Pattern`, so the metrics and span-name
       paths share the same source of truth.
-- [ ] `internal/obs/metrics.go`: registry and helpers, bucket
+- [x] `internal/obs/metrics.go`: registry and helpers, bucket
       choices documented inline.
-- [ ] In-flight-requests gauge, labelled by route from `routectx`.
+- [x] In-flight-requests gauge, labelled by route from `routectx`.
 
 **Tracing polish**
 
-- [ ] Span-name setter (inside the `withRoute` closure) renames
+- [x] Span-name setter (inside the `withRoute` closure) renames
       the OTel server span to `METHOD pattern` from `routectx`
       once the mux has dispatched. Verified by an integration
       test that captures the emitted span and asserts the name
       uses the template (`{id}`), not an expanded id.
-- [ ] DB and outgoing-HTTP calls inherit the request span —
+- [x] DB and outgoing-HTTP calls inherit the request span —
       verified by an integration test that asserts a child span
       exists on a DB-touching request.
-- [ ] Trace ID present in every structured log line when a span
+- [x] Trace ID present in every structured log line when a span
       is active; RequestID derived from trace ID when present.
 
 **Contract**

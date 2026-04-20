@@ -12,6 +12,7 @@ import (
 
 	"github.com/donaldgifford/rfc-api/internal/config"
 	"github.com/donaldgifford/rfc-api/internal/domain"
+	"github.com/donaldgifford/rfc-api/internal/obs"
 	"github.com/donaldgifford/rfc-api/internal/server/httperr"
 	"github.com/donaldgifford/rfc-api/internal/server/middleware"
 )
@@ -26,6 +27,7 @@ type Deps struct {
 	Handlers       Handlers
 	WebhookSecret  string
 	TracerProvider trace.TracerProvider
+	Metrics        *obs.Metrics
 	Logger         *slog.Logger
 }
 
@@ -68,6 +70,7 @@ func New(deps *Deps) *Server {
 		middleware.Recover,
 		middleware.RequestID,
 		middleware.Logger,
+		middleware.Metrics(deps.Metrics),
 	)
 
 	return &Server{

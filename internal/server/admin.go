@@ -9,10 +9,10 @@ import (
 	"net/http/pprof"
 	"time"
 
-	"github.com/prometheus/client_golang/prometheus/promhttp"
 	"go.opentelemetry.io/otel/trace"
 
 	"github.com/donaldgifford/rfc-api/internal/config"
+	"github.com/donaldgifford/rfc-api/internal/obs"
 	"github.com/donaldgifford/rfc-api/internal/server/middleware"
 )
 
@@ -35,11 +35,11 @@ type AdminServer struct {
 // useful when debugging probe flakes). PprofEnabled gates whether
 // /debug/pprof/* is registered at all -- when false, those paths 404
 // as if the package weren't imported.
-func NewAdmin(cfg config.Admin, probes []ReadinessProbe, tp trace.TracerProvider, logger *slog.Logger) *AdminServer {
+func NewAdmin(cfg config.Admin, probes []ReadinessProbe, tp trace.TracerProvider, metrics *obs.Metrics, logger *slog.Logger) *AdminServer {
 	mux := http.NewServeMux()
 	mux.HandleFunc("GET /healthz", HealthLive)
 	mux.HandleFunc("GET /readyz", HealthReady(probes))
-	mux.Handle("GET /metrics", promhttp.Handler())
+	mux.Handle("GET /metrics", metrics.Handler())
 
 	if cfg.PprofEnabled {
 		registerPprof(mux)

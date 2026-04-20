@@ -70,8 +70,9 @@ func runServe(ctx context.Context, logger *slog.Logger, args []string) error {
 	}
 
 	probes := []server.ReadinessProbe{server.AlwaysReady{}, memory.PostgresProbe{}}
+	metrics := obs.NewMetrics()
 
-	admin := server.NewAdmin(cfg.Admin, probes, tp.Provider(), logger)
+	admin := server.NewAdmin(cfg.Admin, probes, tp.Provider(), metrics, logger)
 	main := server.New(&server.Deps{
 		Config:         cfg.Server,
 		RateLimit:      cfg.RateLimit,
@@ -79,6 +80,7 @@ func runServe(ctx context.Context, logger *slog.Logger, args []string) error {
 		Handlers:       handlers,
 		WebhookSecret:  cfg.Webhook.Secret,
 		TracerProvider: tp.Provider(),
+		Metrics:        metrics,
 		Logger:         logger,
 	})
 

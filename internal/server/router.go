@@ -5,6 +5,8 @@ import (
 	"net/http"
 	"time"
 
+	"go.opentelemetry.io/otel/trace"
+
 	"github.com/donaldgifford/rfc-api/internal/config"
 	"github.com/donaldgifford/rfc-api/internal/domain"
 	"github.com/donaldgifford/rfc-api/internal/server/handler"
@@ -112,9 +114,17 @@ func BuildMainHandler(
 // stashes them on r.Context() before calling handler. Route labels
 // (metrics, logs, spans) read from the same key so one mechanism
 // carries everything end-to-end (DESIGN-0001 §Handler pattern).
+//
+// After the mux has dispatched, the closure also renames the active
+// OTel server span to "METHOD <pattern>" (matching the Prometheus
+// route label exactly) so metrics, traces, and logs filter on the
+// same string.
 func withRoute(typeID, pattern string, h http.HandlerFunc) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		ctx := routectx.With(r.Context(), typeID, pattern)
+		if span := trace.SpanFromContext(ctx); span != nil && span.SpanContext().IsValid() {
+			span.SetName(r.Method + " " + pattern)
+		}
 		h(w, r.WithContext(ctx))
 	}
 }
