@@ -1,9 +1,10 @@
 ---
 id: ADR-0001
 title: "Use Go and the standard library net/http for rfc-api"
-status: Proposed
+status: Accepted
 author: Donald Gifford
 created: 2026-04-18
+accepted: 2026-04-20
 ---
 <!-- markdownlint-disable-file MD025 MD041 -->
 

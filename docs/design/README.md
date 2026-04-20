@@ -32,6 +32,6 @@ docz create design "Your Design Title"
 
 | ID | Title | Status | Date | Author | Link |
 |----|-------|--------|------|--------|------|
-| DESIGN-0001 | rfc-api HTTP server: Go + net/http structure | Draft | 2026-04-19 | Donald Gifford | [0001-rfc-api-http-server-go-net-http-structure.md](0001-rfc-api-http-server-go-net-http-structure.md) |
-| DESIGN-0002 | DocumentType: extensibility for multiple content types | Draft | 2026-04-19 | Donald Gifford | [0002-documenttype-extensibility-for-multiple-content-types.md](0002-documenttype-extensibility-for-multiple-content-types.md) |
+| DESIGN-0001 | rfc-api HTTP server: Go + net/http structure | Implemented | 2026-04-19 | Donald Gifford | [0001-rfc-api-http-server-go-net-http-structure.md](0001-rfc-api-http-server-go-net-http-structure.md) |
+| DESIGN-0002 | DocumentType: extensibility for multiple content types | Implemented | 2026-04-19 | Donald Gifford | [0002-documenttype-extensibility-for-multiple-content-types.md](0002-documenttype-extensibility-for-multiple-content-types.md) |
 <!-- END DOCZ AUTO-GENERATED -->

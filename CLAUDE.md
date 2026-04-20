@@ -4,7 +4,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## Project state
 
-Phase 1–3 of [IMPL-0001][impl-0001] are complete. The HTTP server boots end-to-end:
+[IMPL-0001][impl-0001] is **Completed** (2026-04-20). DESIGN-0001 and DESIGN-0002 are **Implemented**; ADR-0001 is **Accepted**. The HTTP server boots end-to-end:
 
 - `cmd/rfc-api/` — `serve` + `work` subcommands under a small dispatcher; `version` / `help`; signal-rooted ctx; errgroup lifecycle for both servers.
 - `internal/server/` — main + admin servers, registry-driven `/api/v1/{type}/*` router with cross-type `/docs` / `/search` / `/types`, full middleware chain (OTel → recover → request-id → logger → metrics on root; timeout → CORS → rate-limit → auth-stub on v1), RFC 7807 problem+json error envelope, per-route GitHub webhook with HMAC verification.
@@ -110,3 +110,7 @@ Before proposing architectural changes or writing code, check the relevant doc's
 - **`kin-openapi` is strict about OAS 3.1 features.** `info.summary` is rejected ("extra sibling fields"), and `const: value` in a schema must be written as `enum: [value]`. When adding to `api/openapi.yaml`, run `go test ./test/contract/...` immediately to catch this.
 - **`goreleaser --snapshot` output goes to `dist/`.** That directory is gitignored — don't `git add -A` without checking.
 - **`govulncheck` must be built with the same Go version as the source tree.** Version skew reports "Loading packages failed" and exits 0. If it's reporting nothing useful, `go install golang.org/x/vuln/cmd/govulncheck@latest` with the current toolchain and retry.
+- **Release docker job needs a `release` target in `docker-bake.hcl` + `*.output=type=registry` override.** `.github/workflows/release.yml` calls `targets: release`; without the target, bake fails immediately with `failed to find target release`. Without the `output=type=registry` override in the action's `set:` block, the build completes but nothing gets pushed (CI's `docker-build` job sets this; the release copy previously didn't). The `release` target inherits from `_common` + `docker-metadata-action` so the `docker/metadata-action`-generated bake-file tags/labels overlay correctly.
+- **`docker/metadata-action`'s `images:` must be the full image reference.** `ghcr.io/donaldgifford/` (trailing slash, no image name) silently produces malformed tags like `ghcr.io/donaldgifford/:v0.0.1`. Use `ghcr.io/donaldgifford/rfc-api`.
+- **`goreleaser archives.format` is deprecated.** v2.15+ wants `formats: ["tar.gz"]`. Migrate at the next release-config touch — current `.goreleaser.yml` still uses the singular key and emits a deprecation warning in every release run.
+- **`GPG_PRIVATE_KEY` secret must be the secret key, not the public half.** `gpg --armor --export` gives you the public half and it imports cleanly with only `public key ... imported` in the log; goreleaser then fails signing with `gpg: No secret key`. Use `gpg --armor --export-secret-keys <fingerprint>`. The block starts with `BEGIN PGP PRIVATE KEY BLOCK`, not `PUBLIC KEY BLOCK`.

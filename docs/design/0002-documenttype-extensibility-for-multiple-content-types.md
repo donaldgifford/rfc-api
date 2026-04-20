@@ -1,15 +1,17 @@
 ---
 id: DESIGN-0002
 title: "DocumentType: extensibility for multiple content types"
-status: Draft
+status: Implemented
 author: Donald Gifford
 created: 2026-04-19
+implemented: 2026-04-20
+implemented_by: IMPL-0001
 ---
 <!-- markdownlint-disable-file MD025 MD041 -->
 
 # DESIGN 0002: DocumentType: extensibility for multiple content types
 
-**Status:** Draft
+**Status:** Implemented (by [IMPL-0001](../impl/0001-rfc-api-http-server-phase-1-implementation.md))
 **Author:** Donald Gifford
 **Date:** 2026-04-19
 
