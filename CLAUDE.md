@@ -97,3 +97,15 @@ Before proposing architectural changes or writing code, check the relevant doc's
 - **List endpoints return bare JSON arrays** with pagination in headers (`X-Total-Count`, RFC 8288 `Link`). Never `null` — `render.ArrayJSON` normalizes nil slices to `[]`.
 - **Errors flow through domain sentinels → `httperr.Write`.** Handlers never encode errors directly; every 4xx/5xx is `application/problem+json` (RFC 7807).
 - **Any change to `api/openapi.yaml` must keep `test/contract/` green.** The spec and handlers are validated against each other in-process on every CI run.
+- **A new `domain.Err*` sentinel requires a matching case in `httperr.classify`.** Otherwise it silently falls through to the 500 default and the client detail is replaced with the fixed "an internal error occurred" string. This seam is how the rate-limit 429-vs-500 bug shipped: the error was passed to `httperr.Write` but no classifier case matched, so the response was 500 / problem+json even though `Retry-After` was set.
+- **HTTP status assertions in tests are exact, not `!= 200`.** A permissive check like `rec.Code != 200` passed for a request that should have returned 429 but was actually returning 500. Assert the specific expected status (and, where it matters, `Content-Type: application/problem+json` for error paths).
+
+## Pitfalls the tooling is opinionated about
+
+- **OTel semconv version** must match the SDK default schema URL. On this tree, `sdk.Default()` returns `v1.40.0`; importing `semconv/v1.26.0` and merging into that resource fails with a "conflicting Schema URL" at runtime. Keep the import at `semconv/v1.40.0`.
+- **`gocritic hugeParam` fires at 80 bytes.** Functions that take a struct of that size or larger by value get flagged — take `*T` instead (e.g. `middleware.CORS(*CORSConfig)`, `server.New(*Deps)`).
+- **Every `//nolint` directive needs an inline justification comment.** `nolintlint` fails otherwise. Pattern: `//nolint:contextcheck // background shutdownCtx intentional; caller ctx is canceled`. Avoid carrying `//nolint:wrapcheck` — `wrapcheck` is not enabled in `.golangci.yml` and the directive would itself be dead code.
+- **`httptest.NewRequest` trips `noctx`.** Use `httptest.NewRequestWithContext(t.Context(), method, url, http.NoBody)` for test requests, and `http.NoBody` (not `nil`) for the body when there isn't one (`gocritic httpNoBody`).
+- **`kin-openapi` is strict about OAS 3.1 features.** `info.summary` is rejected ("extra sibling fields"), and `const: value` in a schema must be written as `enum: [value]`. When adding to `api/openapi.yaml`, run `go test ./test/contract/...` immediately to catch this.
+- **`goreleaser --snapshot` output goes to `dist/`.** That directory is gitignored — don't `git add -A` without checking.
+- **`govulncheck` must be built with the same Go version as the source tree.** Version skew reports "Loading packages failed" and exits 0. If it's reporting nothing useful, `go install golang.org/x/vuln/cmd/govulncheck@latest` with the current toolchain and retry.
