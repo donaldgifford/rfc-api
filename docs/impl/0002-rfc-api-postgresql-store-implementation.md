@@ -38,6 +38,7 @@ created: 2026-04-20
 - [Testing Plan](#testing-plan)
 - [Dependencies](#dependencies)
 - [Open Questions](#open-questions)
+- [Resolved Decisions](#resolved-decisions)
 - [References](#references)
 <!--toc:end-->
 
@@ -100,8 +101,8 @@ ships, changes become migrations rather than rewrites.
 
 #### Tasks
 
-- [ ] Pick a migration tool (see [#Open Questions](#open-questions) Q1) and
-      add it to `mise.toml`.
+- [ ] Add `golang-migrate` to `mise.toml` (decided in
+      [#Resolved Decisions](#resolved-decisions) RD1).
 - [ ] Create `db/migrations/` with forward-only `.sql` files numbered
       `0001_init.sql`, `0002_*.sql`, …
 - [ ] Schema v1:
@@ -158,15 +159,12 @@ service connection-aware.
 
 #### Tasks
 
-- [ ] Pick a driver (see [#Open Questions](#open-questions) Q2). Default
-      assumption: `github.com/jackc/pgx/v5` native API (not the `database/sql`
-      shim) so domain types map cleanly to Postgres types (`pgtype.Timestamptz`
-      etc.).
+- [ ] Use `github.com/jackc/pgx/v5` native API ([RD2](#resolved-decisions));
+      pure Go, no CGO.
 - [ ] `internal/store/postgres/pool.go`: `NewPool(ctx, cfg)` using
       `pgxpool.New`. Honor `DATABASE_URL` (already in `config.Config`). Pool
-      tuning defaults: `MaxConns = 25`, `MinConns = 5`, `MaxConnIdleTime =
-      5m`, `HealthCheckPeriod = 30s` — reviewable via
-      [#Open Questions](#open-questions) Q3.
+      tuning per RD3: `MaxConns = 25`, `MinConns = 5`, `MaxConnIdleTime = 5m`,
+      `HealthCheckPeriod = 30s`.
 - [ ] `cmd/rfc-api/serve.go`: open the pool after config load, before server
       construction; `pool.Close()` in the defer chain under the shutdown
       context.
@@ -191,8 +189,8 @@ this phase so tests that don't need Postgres keep passing.
 
 #### Tasks
 
-- [ ] `internal/store/postgres/docs.go`: implement `store.Docs`. Each method
-      is one transaction (read-only). Methods:
+- [ ] `internal/store/postgres/docs.go`: implement `store.Docs`. Read
+      methods are one transaction each (read-only). Methods:
   - `Get(ctx, id)` — single-row read.
   - `List(ctx, q)` — keyset pagination on `(created_at DESC, id ASC)`; honor
     `q.TypeID` filter when non-empty.
@@ -201,6 +199,14 @@ this phase so tests that don't need Postgres keep passing.
   - `Authors(ctx, id)` — ordered by `seq`.
   - `Revisions(ctx, id)` — returns empty slice in this IMPL; the revisions
     table and worker-populated data land with [IMPL-0003][impl-0003].
+  - `Upsert(ctx, doc) error` — **stub** per RD7. Returns a
+    well-known "not implemented in IMPL-0002" error (shape TBD by
+    IMPL-0003 — likely a new `domain.ErrUnsupported` sentinel with a
+    matching `httperr.classify` case mapping to 501, but IMPL-0003
+    owns that). Present on the interface so worker + reindex paths
+    have a stable contract to target; the real write semantics
+    (transaction shape, per-row replace for `authors`/`links`) land
+    in [IMPL-0003][impl-0003] Phase 4.
 - [ ] Cursor encode/decode: reuse `internal/server/cursor` (already exists);
       the store takes a `*store.Cursor`.
 - [ ] Nil-slice normalization: empty result sets return `[]domain.Link{}`,
@@ -333,45 +339,56 @@ New Go modules:
 
 ## Open Questions
 
-1. **Migration tool choice.** `golang-migrate` (ubiquitous, simple
-   forward-only SQL, CLI + library), `atlas` (HCL-based, richer diff
-   tooling), or `goose` (Go migration functions alongside SQL)? Default:
-   `golang-migrate` for its ubiquity and the fact that our migrations don't
-   need anything beyond SQL.
-2. **Driver choice: `pgx/v5` native vs `database/sql` + `pgx/stdlib`.**
-   Native gives us typed codecs for `jsonb`, `timestamptz`, `text[]`, and
-   better batch ergonomics; `database/sql` gives us drop-in replaceability
-   (hypothetical). Default: native. Reversible later if it becomes a pain.
-3. **Pool tuning defaults.** MaxConns=25 / MinConns=5 is a guess for a
-   single API replica. Review once we have real traffic, or before any
-   multi-replica deploy.
-4. **Extensions storage: `jsonb` column vs side table per type.** DESIGN-0002
-   leaves this open. `jsonb` is simpler and matches the open-ended-map-at-API
-   shape; side tables are friendlier to indexing but commit us to "adding a
-   type is a schema change" which contradicts DESIGN-0002's load-bearing rule.
-   Default: `jsonb` with GIN index. Revisit only if a specific per-type query
-   pattern is slow.
-5. **Labels storage: `text[]` column vs join table.** Similar trade-off.
-   `text[]` with a GIN index is idiomatic Postgres and the query shapes we
-   need (`labels && ARRAY['foo']`, list distinct labels) work cleanly.
-   Default: `text[]`. Join table if we ever want per-label metadata.
-6. **Migration execution policy.** (a) Startup — `rfc-api serve` applies
-   pending migrations before binding, (b) Sidecar Job — a Helm-managed
-   `rfc-api-migrate` Job runs before the Deployment's pods, (c) Explicit
-   only — operator runs `rfc-api migrate` out of band. Default: (c) explicit
-   via the subcommand; Helm wires (b) as a pre-install/pre-upgrade Job.
-   Sidestepping (a) because it couples HTTP-serving readiness to schema
-   migration success, which is a different failure mode.
-7. **Content-SHA uniqueness on `jobs`.** The `UNIQUE (kind,
-   (payload->>'content_sha'))` constraint assumes every job carries
-   `content_sha` in its payload. This matches RFC-0001 #Sync but needs
-   IMPL-0003 to confirm it holds for every job kind (scanner, webhook,
-   discussion-fetch, reindex-request).
-8. **Worker writes during this IMPL.** IMPL-0002 ships read-only SQL because
-   the worker isn't written yet. Do we stub a minimal write path (`Upsert`
-   on `store.Docs`) so the contract is visible before IMPL-0003, or leave
-   writes entirely to IMPL-0003? Default: leave to IMPL-0003 — premature
-   otherwise, and the interface will evolve.
+1. **Job dedup key shape.** The initial sketch used `UNIQUE (kind,
+   (payload->>'content_sha'))`, which assumes every job kind carries
+   `content_sha` in its payload. Not every kind will: a `reindex` or
+   `discussion_fetch` keys more naturally on `document_id`, a scanner tick
+   keys on `source_id`, etc. Two reasonable shapes:
+   - **(a) Rename to `dedup_key text NOT NULL`** — one opaque column, each
+     job kind writes its own key format (`content_sha:<sha>`,
+     `doc:RFC-0001`, `source:rfc-repo/docs/rfc`). Unique on `(kind,
+     dedup_key)`. Simpler constraint, pushes the choice to the producer.
+   - **(b) Keep `content_sha` on ingest jobs, add a `resource_id` column
+     for others**, unique on `(kind, coalesce(content_sha, resource_id))`.
+     More structure, more migration if a new kind needs a different key.
+   Default proposal: **(a)**. Defer the final call to IMPL-0003 where the
+   concrete job kinds are designed; IMPL-0002 will ship whichever shape
+   IMPL-0003 chooses.
+
+## Resolved Decisions
+
+1. **Migration tool: `golang-migrate`.** Ubiquitous, simple forward-only
+   SQL, both CLI and library. Our migrations don't need HCL diff tooling
+   (Atlas) or Go-in-migrations (goose).
+2. **Driver: `github.com/jackc/pgx/v5` native API.** Pure Go, no CGO.
+   Typed codecs for `jsonb`, `timestamptz`, `text[]`, and better batch
+   ergonomics than the `database/sql` shim. (The `database/sql` +
+   `pgx/stdlib` alternative is also pure Go — both options here are
+   CGO-free; the native API wins on ergonomics.)
+3. **Pool tuning defaults: `MaxConns=25`, `MinConns=5`,
+   `MaxConnIdleTime=5m`, `HealthCheckPeriod=30s`.** Review once real
+   traffic or a multi-replica deploy happens.
+4. **Extensions storage: `jsonb` column with a GIN index.** Simpler than
+   per-type side tables and consistent with DESIGN-0002's load-bearing
+   "type is a parameter" rule (side tables would make adding a type a
+   schema change). Revisit only if a specific per-type query pattern is
+   slow.
+5. **Labels storage: `text[]` column with a GIN index.** Idiomatic
+   Postgres and matches the query shapes we need (`labels && ARRAY['foo']`,
+   distinct label enumeration). Join table if we ever want per-label
+   metadata.
+6. **Migration execution: explicit subcommand + Helm Job.** `rfc-api
+   migrate` is the only path that applies migrations. In prod, a Helm
+   pre-install / pre-upgrade Job wraps the subcommand. Locally, `make
+   migrate` runs the same path. Deliberately avoiding (a) startup-
+   embedded migrations — serving readiness shouldn't be coupled to
+   schema-migration success, which is a different failure mode with
+   different rollback semantics.
+7. **Worker writes: stub `Upsert(ctx, doc) error` on `store.Docs`.**
+   Returns `domain.ErrUnsupported` in IMPL-0002 but is present on the
+   interface. This gives IMPL-0003 and IMPL-0005 a stable contract to
+   target, without IMPL-0002 shipping transactional write semantics that
+   will be reshaped by the real worker design.
 
 ## References
 
