@@ -1,7 +1,7 @@
 ---
 id: IMPL-0003
 title: "rfc-api sync worker implementation"
-status: Draft
+status: Completed
 author: Donald Gifford
 created: 2026-04-20
 ---
@@ -9,7 +9,7 @@ created: 2026-04-20
 
 # IMPL 0003: rfc-api sync worker implementation
 
-**Status:** Draft
+**Status:** Completed
 **Author:** Donald Gifford
 **Date:** 2026-04-20
 
@@ -387,20 +387,49 @@ and CLI see them without round-tripping GitHub.
 
 #### Tasks
 
-- [ ] New job kind `discussion_fetch`. Enqueued by the scanner for every
-      active document, and by the webhook when the push includes a PR-
-      related event (`pull_request_review_comment`, `pull_request`).
-- [ ] `internal/worker/discussion/fetcher.go`: GraphQL query to fetch the
-      PR review thread for a document. Writes to `discussions` +
-      `discussion_participants`.
-- [ ] Schema additions (another forward-only migration): `discussions.
+- [x] New job kind `discussion_fetch`. Enqueued by the ingest handler
+      after a successful upsert, by the handler itself on self-requeue
+      for periodic refresh, and by the webhook's PR-event path.
+      *Scanner does NOT fan out discussion jobs per active doc — the
+      quota cost would be prohibitive. The periodic-refresh path is
+      handler-self-requeue: after each successful fetch the handler
+      enqueues itself at `now + active` (open PR) or `now + archived`
+      (merged/closed), so a single idempotent job chains forward
+      without scanner involvement. Webhook covers push-time + PR-
+      event-time reconciliation; the scanner's existing ingest path
+      covers diff-based re-triggers via the ingest handler's post-
+      upsert enqueue.*
+- [x] `internal/worker/discussion/fetcher.go`: REST-based fetcher that
+      pulls the PR review thread (issue + review comments) for a
+      document and writes to `discussions` + `discussion_participants`.
+      *REST via go-github rather than GraphQL — the issue-comments +
+      pulls-comments combo is two calls and already covers the MVP
+      surface; GraphQL is a v2 optimization when quota bites. Handler
+      branches on payload: direct (document_id+path) vs PR-scope
+      (pr_number). PR-scope is the webhook fan-out path; direct is
+      ingest's single-doc refresh.*
+- [x] Schema additions (another forward-only migration): `discussions.
       last_synced_at timestamptz`; `discussion_participants(document_id,
       handle, name, email, seq)`.
-- [ ] Backoff for closed/merged PRs: re-check interval stretches after
+      *Already shipped in `0001_init.up.sql` during IMPL-0002 Phase 1
+      — no new migration needed. The discussions table carried
+      `last_synced_at` from day one and `discussion_participants` was
+      included as a future-facing table; Phase 6 just populates them.*
+- [x] Backoff for closed/merged PRs: re-check interval stretches after
       the PR is merged (no new comments expected; don't waste quota).
-- [ ] Handle force-pushes: if the referenced PR's commit graph changed,
+      *Handler self-requeue uses `Config.Archived` (default 24h) for
+      merged/closed PRs vs `Config.Active` (default 1h) for open PRs.
+      The PR state drives the delay; the queue's GREATEST()-on-conflict
+      means webhook/ingest re-enqueues still bump the next run forward
+      rather than racing the backoff.*
+- [x] Handle force-pushes: if the referenced PR's commit graph changed,
       re-fetch the discussion from scratch. Per the RFC-0001 risk table,
       discussion is best-effort.
+      *`UpsertDiscussion` deletes and re-inserts all
+      `discussion_participants` rows in a single transaction on every
+      call — so a rewritten PR history (different commit-author set)
+      cannot leave stale participants behind. No force-push detection
+      needed; the "always replace" pattern falls out of the schema.*
 
 #### Success Criteria
 

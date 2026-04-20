@@ -363,6 +363,85 @@ func (d *Docs) ExistingSources(ctx context.Context, repo, basePath string) (map[
 	return out, nil
 }
 
+// UpsertDiscussion replaces the discussion summary + participants for
+// a document in a single transaction. Participants are truncated and
+// re-inserted on each call so a force-push-shifted PR thread cannot
+// leave stale authors behind (IMPL-0003 Phase 6 force-push handling).
+//
+// The document must already exist — UpsertDiscussion is called by the
+// discussion_fetch handler after the ingest handler has upserted the
+// row, so a missing parent is a hard error (surfaces as ErrNotFound
+// wrapped by the FK violation).
+func (d *Docs) UpsertDiscussion(ctx context.Context, id domain.DocumentID, disc domain.Discussion) error {
+	if id == "" {
+		return fmt.Errorf("%w: document id is required", domain.ErrInvalidInput)
+	}
+
+	tx, err := d.pool.BeginTx(ctx, pgx.TxOptions{})
+	if err != nil {
+		return upstream("begin upsert discussion", err)
+	}
+	defer func() {
+		//nolint:errcheck,gosec // rollback on commit-success is a no-op; on failure the caller already has the cause.
+		tx.Rollback(ctx)
+	}()
+
+	const stmt = `
+		INSERT INTO discussions (document_id, url, comment_count, last_activity, last_synced_at)
+		VALUES ($1, $2, $3, $4, now())
+		ON CONFLICT (document_id) DO UPDATE SET
+			url            = EXCLUDED.url,
+			comment_count  = EXCLUDED.comment_count,
+			last_activity  = EXCLUDED.last_activity,
+			last_synced_at = EXCLUDED.last_synced_at
+	`
+	lastActivity := nullIfZero(disc.LastActivity)
+	if _, err := tx.Exec(ctx, stmt,
+		string(id), nullIfEmpty(disc.URL), disc.CommentCount, lastActivity,
+	); err != nil {
+		return upstream("upsert discussion", err)
+	}
+
+	if _, err := tx.Exec(ctx,
+		`DELETE FROM discussion_participants WHERE document_id = $1`, string(id)); err != nil {
+		return upstream("clear participants", err)
+	}
+	for i, p := range disc.Participants {
+		if _, err := tx.Exec(ctx,
+			`INSERT INTO discussion_participants (document_id, seq, handle, name, email)
+			 VALUES ($1, $2, $3, $4, $5)`,
+			string(id), i, p.Handle,
+			nullIfEmpty(p.Name), nullIfEmpty(p.Email),
+		); err != nil {
+			return upstream(fmt.Sprintf("insert participant[%d]", i), err)
+		}
+	}
+
+	if err := tx.Commit(ctx); err != nil {
+		return upstream("commit upsert discussion", err)
+	}
+	return nil
+}
+
+// nullIfEmpty returns nil for an empty string so the pgx driver
+// writes SQL NULL instead of ” — keeps the column semantics aligned
+// with the read path (which treats NULL and ” distinctly).
+func nullIfEmpty(s string) any {
+	if s == "" {
+		return nil
+	}
+	return s
+}
+
+// nullIfZero returns nil for a zero time so empty timestamps become
+// SQL NULL rather than 0001-01-01.
+func nullIfZero(t time.Time) any {
+	if t.IsZero() {
+		return nil
+	}
+	return t
+}
+
 // Delete removes a document and its cascade (authors, links,
 // discussions). Used by the scanner's tombstone path when a source
 // file disappears (IMPL-0003 RD4 — hard delete, no tombstones).

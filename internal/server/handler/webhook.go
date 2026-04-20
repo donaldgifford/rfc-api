@@ -3,6 +3,7 @@ package handler
 import (
 	"context"
 	"encoding/json"
+	"fmt"
 	"io"
 	"log/slog"
 	"net/http"
@@ -83,6 +84,19 @@ type pushCommit struct {
 	Removed  []string `json:"removed"`
 }
 
+// prPayload is the narrow subset of a pull_request / pull_request_*
+// event the handler consumes. Number + full_name are the only fields
+// the downstream discussion_fetch needs; the handler resolves PR →
+// files in the worker rather than fetching inline (202 SLA).
+type prPayload struct {
+	Repository  pushRepository `json:"repository"`
+	PullRequest prInfo         `json:"pull_request"`
+}
+
+type prInfo struct {
+	Number int `json:"number"`
+}
+
 // GitHub serves POST /api/v1/webhooks/github. Always returns 202;
 // a malformed payload is logged at WARN but not surfaced as 4xx —
 // the signature was valid and GitHub's retry semantics are built
@@ -96,6 +110,8 @@ func (h *Webhook) GitHub(w http.ResponseWriter, r *http.Request) {
 	switch event {
 	case "push":
 		h.handlePush(r)
+	case "pull_request", "pull_request_review", "pull_request_review_comment":
+		h.handlePullRequest(r, event)
 	default:
 		h.logger.InfoContext(r.Context(), "github webhook accepted (noop event)",
 			"github.event", event,
@@ -162,6 +178,69 @@ func (h *Webhook) handlePush(r *http.Request) {
 		"enqueued", enqueued,
 		"touched_paths", len(touched),
 	)
+}
+
+// handlePullRequest expands a PR-scope event into one
+// `discussion_fetch` job with PRNumber set. The discussion handler
+// fetches the PR's file list and fans out per-document jobs. This
+// indirection keeps the webhook handler fast (202 under 100ms) — no
+// GitHub API calls fire inline.
+func (h *Webhook) handlePullRequest(r *http.Request, event string) {
+	ctx := r.Context()
+	body, err := io.ReadAll(r.Body)
+	if err != nil {
+		h.logger.WarnContext(ctx, "webhook: read pr body", "err", err.Error())
+		return
+	}
+	var payload prPayload
+	if err := json.Unmarshal(body, &payload); err != nil {
+		h.logger.WarnContext(ctx, "webhook: unmarshal pr", "err", err.Error())
+		return
+	}
+	if h.queue == nil || payload.Repository.FullName == "" || payload.PullRequest.Number == 0 {
+		h.logger.InfoContext(ctx, "webhook pr accepted (no queue / empty fields)",
+			"event", event,
+			"repo", payload.Repository.FullName,
+			"pr", payload.PullRequest.Number)
+		return
+	}
+
+	// Skip events for repos we don't own. Silently dropping an event
+	// from a repo outside source_repos is correct — the worker has
+	// no reason to fetch comments on an unmapped repo.
+	if !repoInSources(h.sources, payload.Repository.FullName) {
+		return
+	}
+
+	dedup := fmt.Sprintf("discussion-pr:%s:%d",
+		payload.Repository.FullName, payload.PullRequest.Number)
+	jobPayload := map[string]any{
+		"repo":      payload.Repository.FullName,
+		"pr_number": payload.PullRequest.Number,
+	}
+	if err := h.queue.Enqueue(ctx, "discussion_fetch", dedup, jobPayload, time.Time{}); err != nil {
+		h.logger.WarnContext(ctx, "webhook: enqueue discussion_fetch",
+			"repo", payload.Repository.FullName,
+			"pr", payload.PullRequest.Number,
+			"err", err.Error())
+		return
+	}
+	h.logger.InfoContext(ctx, "pr event enqueued",
+		"event", event,
+		"repo", payload.Repository.FullName,
+		"pr", payload.PullRequest.Number,
+	)
+}
+
+// repoInSources reports whether any configured source_repo targets
+// the given repo, regardless of path.
+func repoInSources(sources []config.SourceRepo, repo string) bool {
+	for _, s := range sources {
+		if s.Repo == repo {
+			return true
+		}
+	}
+	return false
 }
 
 // collectTouchedPaths walks the push payload and builds a

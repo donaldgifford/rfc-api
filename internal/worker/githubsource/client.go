@@ -41,6 +41,23 @@ type PullRequest struct {
 	URL    string
 }
 
+// PRComment is one comment on a PR — either a conversation comment
+// (via the issues endpoint) or a line-review comment (via the
+// pulls/comments endpoint). The kind is erased here because the
+// discussion fetcher treats them uniformly.
+type PRComment struct {
+	Author    Participant
+	UpdatedAt time.Time
+}
+
+// Participant identifies a commenter. Handle is the GitHub login
+// (always present); Name is the display name when available.
+type Participant struct {
+	Handle string
+	Name   string
+	Email  string
+}
+
 // Config bundles credentials + tuning knobs. Either App creds
 // (AppID + InstallationID + PrivateKey) or Token must be set —
 // New returns an error if both or neither are supplied. HTTPClient
@@ -275,6 +292,98 @@ func (c *Client) ListPullRequestsForFile(ctx context.Context, repo, path string)
 		}
 	}
 	return out, nil
+}
+
+// ListPullRequestComments returns every comment on the given PR —
+// both the main conversation (via the issues endpoint) and line-
+// review comments (via the pulls endpoint). Caller dedups + ranks
+// across the combined set.
+func (c *Client) ListPullRequestComments(ctx context.Context, repo string, prNumber int) ([]PRComment, error) {
+	owner, name, err := splitRepo(repo)
+	if err != nil {
+		return nil, err
+	}
+
+	var issueComments []*github.IssueComment
+	err = c.withRetry(ctx, func() error {
+		cs, _, err := c.api.Issues.ListComments(ctx, owner, name, prNumber, nil)
+		if err != nil {
+			return err //nolint:wrapcheck // wrapped at the outer call site
+		}
+		issueComments = cs
+		return nil
+	})
+	if err != nil {
+		return nil, fmt.Errorf("issue comments %s#%d: %w", repo, prNumber, err)
+	}
+
+	var reviewComments []*github.PullRequestComment
+	err = c.withRetry(ctx, func() error {
+		cs, _, err := c.api.PullRequests.ListComments(ctx, owner, name, prNumber, nil)
+		if err != nil {
+			return err //nolint:wrapcheck // wrapped at the outer call site
+		}
+		reviewComments = cs
+		return nil
+	})
+	if err != nil {
+		return nil, fmt.Errorf("review comments %s#%d: %w", repo, prNumber, err)
+	}
+
+	out := make([]PRComment, 0, len(issueComments)+len(reviewComments))
+	for _, c := range issueComments {
+		out = append(out, PRComment{
+			Author:    userToParticipant(c.GetUser()),
+			UpdatedAt: c.GetUpdatedAt().Time,
+		})
+	}
+	for _, c := range reviewComments {
+		out = append(out, PRComment{
+			Author:    userToParticipant(c.GetUser()),
+			UpdatedAt: c.GetUpdatedAt().Time,
+		})
+	}
+	return out, nil
+}
+
+// ListPullRequestFiles returns the paths touched by a PR. Used by the
+// webhook's PR-event path to resolve which configured SourceRepo
+// documents a PR review thread maps to.
+func (c *Client) ListPullRequestFiles(ctx context.Context, repo string, prNumber int) ([]string, error) {
+	owner, name, err := splitRepo(repo)
+	if err != nil {
+		return nil, err
+	}
+	var files []*github.CommitFile
+	err = c.withRetry(ctx, func() error {
+		fs, _, err := c.api.PullRequests.ListFiles(ctx, owner, name, prNumber, nil)
+		if err != nil {
+			return err //nolint:wrapcheck // wrapped at the outer call site
+		}
+		files = fs
+		return nil
+	})
+	if err != nil {
+		return nil, fmt.Errorf("pr files %s#%d: %w", repo, prNumber, err)
+	}
+	out := make([]string, 0, len(files))
+	for _, f := range files {
+		out = append(out, f.GetFilename())
+	}
+	return out, nil
+}
+
+// userToParticipant flattens a go-github *User into a Participant.
+// Handle is always the Login; Name / Email are optional.
+func userToParticipant(u *github.User) Participant {
+	if u == nil {
+		return Participant{}
+	}
+	return Participant{
+		Handle: u.GetLogin(),
+		Name:   u.GetName(),
+		Email:  u.GetEmail(),
+	}
 }
 
 // withRetry runs fn up to maxRetries times, sleeping per GitHub's

@@ -143,6 +143,59 @@ func TestRateLimit_BackoffThenSuccess(t *testing.T) {
 	}
 }
 
+func TestListPullRequestComments_CombinesIssueAndReview(t *testing.T) {
+	issueBody := `[
+		{"user":{"login":"alice"},"updated_at":"2026-01-01T00:00:00Z"},
+		{"user":{"login":"bob"},"updated_at":"2026-01-02T00:00:00Z"}
+	]`
+	reviewBody := `[
+		{"user":{"login":"carol"},"updated_at":"2026-01-03T00:00:00Z"}
+	]`
+	client := fakeGitHub(t, map[string]http.HandlerFunc{
+		"/api/v3/repos/owner/repo/issues/42/comments": func(w http.ResponseWriter, _ *http.Request) {
+			w.Header().Set("Content-Type", "application/json")
+			_, _ = w.Write([]byte(issueBody))
+		},
+		"/api/v3/repos/owner/repo/pulls/42/comments": func(w http.ResponseWriter, _ *http.Request) {
+			w.Header().Set("Content-Type", "application/json")
+			_, _ = w.Write([]byte(reviewBody))
+		},
+	})
+
+	comments, err := client.ListPullRequestComments(t.Context(), "owner/repo", 42)
+	if err != nil {
+		t.Fatalf("ListPullRequestComments: %v", err)
+	}
+	if len(comments) != 3 {
+		t.Fatalf("got %d comments, want 3", len(comments))
+	}
+	// Order: issue comments first, then review comments — caller dedups.
+	if comments[0].Author.Handle != "alice" || comments[2].Author.Handle != "carol" {
+		t.Errorf("unexpected ordering: %+v", comments)
+	}
+}
+
+func TestListPullRequestFiles_ReturnsPaths(t *testing.T) {
+	body := `[
+		{"filename":"docs/rfc/0001.md","status":"modified"},
+		{"filename":"README.md","status":"modified"}
+	]`
+	client := fakeGitHub(t, map[string]http.HandlerFunc{
+		"/api/v3/repos/owner/repo/pulls/7/files": func(w http.ResponseWriter, _ *http.Request) {
+			w.Header().Set("Content-Type", "application/json")
+			_, _ = w.Write([]byte(body))
+		},
+	})
+
+	files, err := client.ListPullRequestFiles(t.Context(), "owner/repo", 7)
+	if err != nil {
+		t.Fatalf("ListPullRequestFiles: %v", err)
+	}
+	if len(files) != 2 || files[0] != "docs/rfc/0001.md" {
+		t.Errorf("files = %v", files)
+	}
+}
+
 func TestSplitRepo_BadShape(t *testing.T) {
 	client := fakeGitHub(t, map[string]http.HandlerFunc{})
 	if _, err := client.ListFiles(t.Context(), "bad", "docs", "main"); err == nil {

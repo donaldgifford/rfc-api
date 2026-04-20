@@ -118,6 +118,57 @@ func TestDelete_Cascades(t *testing.T) {
 	}
 }
 
+func TestUpsertDiscussion_Roundtrip(t *testing.T) {
+	pool := testPool(t)
+	docs := postgres.NewDocs(pool)
+
+	doc := sampleDoc("RFC-0500", "rfc", time.Now().UTC().Truncate(time.Microsecond))
+	if err := docs.Upsert(t.Context(), &doc); err != nil {
+		t.Fatal(err)
+	}
+
+	activity := time.Now().UTC().Truncate(time.Microsecond)
+	disc := domain.Discussion{
+		URL:          "https://github.com/example/repo/pull/42",
+		CommentCount: 3,
+		LastActivity: activity,
+		Participants: []domain.Author{
+			{Handle: "alice", Name: "Alice"},
+			{Handle: "bob"},
+		},
+	}
+	if err := docs.UpsertDiscussion(t.Context(), doc.ID, disc); err != nil {
+		t.Fatalf("UpsertDiscussion: %v", err)
+	}
+
+	got, err := docs.Discussion(t.Context(), doc.ID)
+	if err != nil {
+		t.Fatalf("Discussion: %v", err)
+	}
+	if got.URL != disc.URL || got.CommentCount != 3 {
+		t.Errorf("got %+v", got)
+	}
+	if len(got.Participants) != 2 || got.Participants[0].Handle != "alice" {
+		t.Errorf("participants = %+v", got.Participants)
+	}
+
+	// Re-upsert with fewer participants to prove the delete+reinsert
+	// handles force-push-style history rewrites.
+	disc2 := disc
+	disc2.Participants = []domain.Author{{Handle: "carol"}}
+	disc2.CommentCount = 1
+	if err := docs.UpsertDiscussion(t.Context(), doc.ID, disc2); err != nil {
+		t.Fatalf("re-UpsertDiscussion: %v", err)
+	}
+	got2, _ := docs.Discussion(t.Context(), doc.ID)
+	if len(got2.Participants) != 1 || got2.Participants[0].Handle != "carol" {
+		t.Errorf("participants after rewrite = %+v", got2.Participants)
+	}
+	if got2.CommentCount != 1 {
+		t.Errorf("count after rewrite = %d", got2.CommentCount)
+	}
+}
+
 func TestExistingSources_FiltersByRepoAndBase(t *testing.T) {
 	pool := testPool(t)
 	docs := postgres.NewDocs(pool)

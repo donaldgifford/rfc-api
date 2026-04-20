@@ -134,11 +134,17 @@ func TestHandle_HappyPath(t *testing.T) {
 	if store.upserted == nil || store.upserted.ID != "RFC-0001" {
 		t.Errorf("upserted = %+v", store.upserted)
 	}
-	if len(q.enqueued) != 1 || q.enqueued[0].kind != "reindex" {
-		t.Errorf("enqueued = %+v", q.enqueued)
+	// Successful ingest fans out two downstream jobs: reindex for the
+	// search path (IMPL-0005) and discussion_fetch for the PR thread
+	// (IMPL-0003 Phase 6). Order matches the enqueue call order.
+	if len(q.enqueued) != 2 {
+		t.Fatalf("enqueued = %+v", q.enqueued)
 	}
-	if q.enqueued[0].dedup != "doc:RFC-0001" {
-		t.Errorf("reindex dedup = %q", q.enqueued[0].dedup)
+	if q.enqueued[0].kind != "reindex" || q.enqueued[0].dedup != "doc:RFC-0001" {
+		t.Errorf("reindex = %+v", q.enqueued[0])
+	}
+	if q.enqueued[1].kind != "discussion_fetch" || q.enqueued[1].dedup != "discussion:RFC-0001" {
+		t.Errorf("discussion_fetch = %+v", q.enqueued[1])
 	}
 }
 

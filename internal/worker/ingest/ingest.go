@@ -181,6 +181,25 @@ func (h *Handler) Handle(ctx context.Context, job queue.Job) error {
 		return fmt.Errorf("enqueue reindex: %w", err)
 	}
 
+	// Enqueue a discussion refresh. Dedup key `discussion:<id>` keeps
+	// repeated ingests collapsed to one in-flight job; the handler
+	// self-requeues on a longer cadence for periodic PR-thread polling
+	// without pulling the scanner into the discussion path.
+	if err := h.queue.Enqueue(ctx, "discussion_fetch",
+		"discussion:"+string(doc.ID),
+		map[string]string{
+			"document_id": string(doc.ID),
+			"repo":        p.Repo,
+			"path":        p.Path,
+		},
+		time.Time{},
+	); err != nil {
+		// Non-fatal: ingest was successful, discussion is a best-effort
+		// secondary. Log-and-continue keeps a discussion-service outage
+		// from failing the ingest pipeline.
+		h.logger.WarnContext(ctx, "enqueue discussion_fetch", "err", err.Error())
+	}
+
 	h.logger.InfoContext(ctx, "ingested",
 		"document_id", doc.ID, "repo", p.Repo, "path", p.Path, "sha", sha)
 	return nil

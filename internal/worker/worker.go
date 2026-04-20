@@ -31,6 +31,7 @@ import (
 	"github.com/donaldgifford/rfc-api/internal/obs"
 	"github.com/donaldgifford/rfc-api/internal/parser"
 	"github.com/donaldgifford/rfc-api/internal/server"
+	"github.com/donaldgifford/rfc-api/internal/worker/discussion"
 	"github.com/donaldgifford/rfc-api/internal/worker/githubsource"
 	"github.com/donaldgifford/rfc-api/internal/worker/ingest"
 	"github.com/donaldgifford/rfc-api/internal/worker/queue"
@@ -44,6 +45,7 @@ type IngestStore interface {
 	Upsert(ctx context.Context, doc *domain.Document) error
 	ExistingSources(ctx context.Context, repo, basePath string) (map[string]string, error)
 	Delete(ctx context.Context, id domain.DocumentID) error
+	UpsertDiscussion(ctx context.Context, id domain.DocumentID, disc domain.Discussion) error
 }
 
 // Deps are the dependencies Run consumes. Taken by pointer so the
@@ -232,9 +234,8 @@ func (w *Worker) runScanner(ctx context.Context) error {
 }
 
 // runProcessor owns the queue-lease loop. Builds the per-kind
-// handler map and hands it to queue.Leaser. Phase 4 wires the
-// `ingest` kind; `reindex` lands in IMPL-0005 and `discussion_fetch`
-// in Phase 6 — they register later via adding entries here.
+// handler map and hands it to queue.Leaser. Phase 4 wires `ingest`,
+// Phase 6 adds `discussion_fetch`; `reindex` lands in IMPL-0005.
 func (w *Worker) runProcessor(ctx context.Context) error {
 	if w.store == nil || w.parsers == nil {
 		return errors.New("worker: nil store or parsers; cannot process")
@@ -251,6 +252,17 @@ func (w *Worker) runProcessor(ctx context.Context) error {
 		return fmt.Errorf("ingest handler: %w", err)
 	}
 
+	discussionHandler, err := discussion.New(&discussion.Config{
+		Store:   w.store,
+		Fetcher: w.github,
+		Queue:   w.queue,
+		Sources: w.sources,
+		Logger:  w.logger,
+	})
+	if err != nil {
+		return fmt.Errorf("discussion handler: %w", err)
+	}
+
 	workerID := queue.WorkerID(hostname(), os.Getpid())
 	leaser, err := queue.NewLeaser(&queue.LeaserOptions{
 		Queue:    w.queue,
@@ -261,6 +273,10 @@ func (w *Worker) runProcessor(ctx context.Context) error {
 		Kinds: map[string]queue.KindConfig{
 			ingest.Kind: {
 				Handler:     ingestHandler.Handle,
+				Concurrency: w.cfg.MaxConcurrent,
+			},
+			discussion.Kind: {
+				Handler:     discussionHandler.Handle,
 				Concurrency: w.cfg.MaxConcurrent,
 			},
 		},

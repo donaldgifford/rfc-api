@@ -128,6 +128,62 @@ func TestWebhookGitHub_MalformedJSON_Still202(t *testing.T) {
 	}
 }
 
+func TestWebhookGitHub_PullRequest_EnqueuesDiscussionFetch(t *testing.T) {
+	q := &recordingQueue{}
+	h := handler.NewWebhook(&handler.WebhookConfig{
+		Sources: []config.SourceRepo{{
+			TypeID: "rfc", Repo: "owner/repo", Path: "docs/rfc/",
+		}},
+		Queue: q,
+	})
+
+	body := `{
+		"repository":{"full_name":"owner/repo"},
+		"pull_request":{"number":42}
+	}`
+	req := httptest.NewRequestWithContext(t.Context(), "POST", "/api/v1/webhooks/github",
+		strings.NewReader(body))
+	req.Header.Set("X-GitHub-Event", "pull_request_review_comment")
+	rec := httptest.NewRecorder()
+	h.GitHub(rec, req)
+
+	if rec.Code != 202 {
+		t.Errorf("status = %d, want 202", rec.Code)
+	}
+	if q.jobs.Load() != 1 {
+		t.Fatalf("enqueued = %d, want 1", q.jobs.Load())
+	}
+	if q.last != "discussion-pr:owner/repo:42" {
+		t.Errorf("dedup = %q", q.last)
+	}
+}
+
+func TestWebhookGitHub_PullRequest_UnmappedRepo_NoOp(t *testing.T) {
+	q := &recordingQueue{}
+	h := handler.NewWebhook(&handler.WebhookConfig{
+		Sources: []config.SourceRepo{{
+			TypeID: "rfc", Repo: "owner/repo", Path: "docs/rfc/",
+		}},
+		Queue: q,
+	})
+	body := `{
+		"repository":{"full_name":"someone/else"},
+		"pull_request":{"number":7}
+	}`
+	req := httptest.NewRequestWithContext(t.Context(), "POST", "/api/v1/webhooks/github",
+		strings.NewReader(body))
+	req.Header.Set("X-GitHub-Event", "pull_request")
+	rec := httptest.NewRecorder()
+	h.GitHub(rec, req)
+
+	if rec.Code != 202 {
+		t.Errorf("status = %d", rec.Code)
+	}
+	if q.jobs.Load() != 0 {
+		t.Errorf("unmapped repo should not enqueue; got %d", q.jobs.Load())
+	}
+}
+
 func TestWebhookGitHub_RemovedFile_DoesNotEnqueue(t *testing.T) {
 	q := &recordingQueue{}
 	h := handler.NewWebhook(&handler.WebhookConfig{
