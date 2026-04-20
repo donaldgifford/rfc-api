@@ -155,8 +155,13 @@ ships, changes become migrations rather than rewrites.
       `go run ./cmd/rfc-api migrate`. Also added `make migrate-down`
       (gated on `CONFIRM=1`) that uses the golang-migrate CLI for
       dev rollback.*
-- [ ] `make ci` includes a smoke that spins Postgres up via compose (already
+- [x] `make ci` includes a smoke that spins Postgres up via compose (already
       wired), runs migrate, drops the DB — catches schema-only regressions.
+      *Shipped as a dedicated `schema` job in `.github/workflows/ci.yml`.
+      Uses a `postgres:18-alpine` service container rather than compose (faster,
+      same result). The job asserts: cold migrate up, idempotent re-run,
+      full down, re-forward — every transition the production migrate path
+      may hit.*
 
 #### Success Criteria
 
