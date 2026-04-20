@@ -28,15 +28,28 @@ const DefaultFilePath = "/etc/rfc-api/config.yaml"
 
 // Config aggregates every runtime knob. Loaded by Load.
 type Config struct {
-	Server          Server        `yaml:"server"`
-	Admin           Admin         `yaml:"admin"`
-	Log             Log           `yaml:"log"`
-	RateLimit       RateLimit     `yaml:"rate_limit"`
-	Database        Database      `yaml:"database"`
-	Meili           Meili         `yaml:"meili"`
-	OTel            OTel          `yaml:"otel"`
-	Webhook         Webhook       `yaml:"webhook"`
-	ShutdownTimeout time.Duration `yaml:"shutdown_timeout"`
+	Server          Server         `yaml:"server"`
+	Admin           Admin          `yaml:"admin"`
+	Log             Log            `yaml:"log"`
+	RateLimit       RateLimit      `yaml:"rate_limit"`
+	Database        Database       `yaml:"database"`
+	Meili           Meili          `yaml:"meili"`
+	OTel            OTel           `yaml:"otel"`
+	Webhook         Webhook        `yaml:"webhook"`
+	DocumentTypes   []DocumentType `yaml:"document_types"`
+	ShutdownTimeout time.Duration  `yaml:"shutdown_timeout"`
+}
+
+// DocumentType is the raw config entry for one registered document
+// type. The registry loader (internal/domain/registry) validates and
+// translates this into the runtime domain.DocumentType. Keeping the
+// shape in config (not domain) avoids making domain depend on YAML
+// tags.
+type DocumentType struct {
+	ID        string   `yaml:"id"`
+	Name      string   `yaml:"name"`
+	Prefix    string   `yaml:"prefix"`
+	Lifecycle []string `yaml:"lifecycle"`
 }
 
 // Server holds main-port HTTP settings.
@@ -152,6 +165,20 @@ func defaults() *Config {
 			TraceSampleRatio: 0.1,
 		},
 		ShutdownTimeout: 20 * time.Second,
+		DocumentTypes: []DocumentType{
+			{
+				ID:        "rfc",
+				Name:      "Request for Comments",
+				Prefix:    "RFC",
+				Lifecycle: []string{"Draft", "Proposed", "Accepted", "Rejected", "Superseded"},
+			},
+			{
+				ID:        "adr",
+				Name:      "Architecture Decision Record",
+				Prefix:    "ADR",
+				Lifecycle: []string{"Proposed", "Accepted", "Deprecated", "Superseded"},
+			},
+		},
 	}
 }
 

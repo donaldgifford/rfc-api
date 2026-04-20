@@ -452,23 +452,23 @@ in RFC-0001 can be pointed at without further changes to `main`,
 
 **Tests (Phase 1 scope)**
 
-- [ ] Unit: middleware — recover catches a panicking handler,
+- [x] Unit: middleware — recover catches a panicking handler,
       request-id echoes header, logger emits required fields
       using OTel semconv names.
-- [ ] Unit: `httperr.Write` — one table-driven test per sentinel.
-- [ ] Unit: config loader — precedence, required-fields errors,
+- [x] Unit: `httperr.Write` — one table-driven test per sentinel.
+- [x] Unit: config loader — precedence, required-fields errors,
       naming rule (RFC_API_ prefix vs. upstream names).
-- [ ] Unit: `routectx` round-trip — `With` then `From` returns the
+- [x] Unit: `routectx` round-trip — `With` then `From` returns the
       same `(typeID, pattern)`.
-- [ ] Unit: readiness-probe registry — one passing, one failing
+- [x] Unit: readiness-probe registry — one passing, one failing
       probe; assert body names the failing probe.
-- [ ] Integration: both servers start on free ports; probe
+- [x] Integration: both servers start on free ports; probe
       `/healthz`, `/readyz`, `/metrics` on admin port; probe
       non-existent path on main port (expect 404 RFC 7807); shut
       down both cleanly.
-- [ ] Integration: `RFC_API_PPROF_ENABLED=true` — `/debug/pprof/`
+- [x] Integration: `RFC_API_PPROF_ENABLED=true` — `/debug/pprof/`
       returns 200; `RFC_API_PPROF_ENABLED=false` — same path 404s.
-- [ ] CI: `make ci` is green.
+- [x] CI: `make ci` is green.
 
 #### Success Criteria
 
@@ -525,18 +525,18 @@ what Phase 2 proves.
 
 **Domain + registry**
 
-- [ ] `internal/domain/document.go`: `Document`, `DocumentID`
+- [x] `internal/domain/document.go`: `Document`, `DocumentID`
       (canonical display id), `Author`, `Link`, `Discussion` —
       the framework-agnostic types handlers emit.
-- [ ] `internal/domain/doctype.go`: `DocumentType` value object
+- [x] `internal/domain/doctype.go`: `DocumentType` value object
       and `DocumentTypeRegistry` interface per
       [DESIGN-0002][design-0002].
-- [ ] `internal/domain/docid/docid.go`: pure helpers —
+- [x] `internal/domain/docid/docid.go`: pure helpers —
       `Canonical(type, urlID) → "RFC-0001"`,
       `Parse("RFC-0001") → (type, urlID, ok)`,
       `URLForm(canonical) → urlID`. No registry lookup on the
       read path.
-- [ ] `internal/domain/registry/config.go`: load
+- [x] `internal/domain/registry/config.go`: load
       `document_types` section from config; validate
       prefix uniqueness at startup; fail loudly on conflicts.
 
