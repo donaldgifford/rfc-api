@@ -21,7 +21,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 - `internal/store/memory/` survives as a **test-only** `store.Docs` fake for unit suites (server, handler, service, contract, router). Production never imports it.
 - Integration tests: store-level at `internal/store/postgres/*_test.go`, server-level at `test/integration/postgres/`. Both gated `//go:build integration` and driven by `DATABASE_URL`. `make test-integration` runs them; CI `integration` job exercises on every push via a postgres:18-alpine service.
 
-[IMPL-0003][impl-0003] is **in progress**. Phases 1–4 complete:
+[IMPL-0003][impl-0003] is **in progress**. Phases 1–5 complete:
 
 - `cmd/rfc-api/work.go` — real worker lifecycle (not a stub). Opens the pgxpool, builds the document-type registry, constructs `worker.New`, runs scanner + processor sub-loops via errgroup, exposes its own admin port (`/healthz` `/readyz` `/metrics`).
 - `internal/config/config.go` — `Worker` + `SourceRepo` structs; env prefix `RFC_API_WORKER_*` plus `GITHUB_TOKEN` upstream-named.
@@ -30,6 +30,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 - `internal/worker/githubsource/` — GitHub access seam (`Client`) built on `go-github/v67` + `ghinstallation/v2`. Supports App-based auth (prod) and a PAT fallback (dev); rate-limit retry with bounded backoff (`withRetry`); `ListFiles`/`GetFile`/`ListPullRequestsForFile`. Unit-tested via httptest against a mux at `/api/v3/*`.
 - `internal/worker/queue/` — Postgres-backed job queue. `Queue` has `Enqueue/Lease/Succeed/Fail/Depth`; `Lease` uses a CTE + `FOR UPDATE SKIP LOCKED` so N workers coordinate without an external broker. `Leaser` owns the poll loop + per-kind concurrency semaphore + panic recovery. Five Prometheus metrics (`rfc_api_worker_jobs_*` + `queue_depth`) live on `obs.Metrics` and render on the worker's `/metrics`. Integration tests gated `//go:build integration`.
 - `internal/worker/scanner/` + `internal/worker/ingest/` — ingest pipeline. Scanner ticks every `ScannerInterval`, lists files per `SourceRepo`, diffs against `documents.source_commit`, enqueues `ingest` jobs (dedup `content:<sha>`), and hard-deletes anything the remote dropped. Ingest handler fetches, resolves the parser, parses, transactionally upserts (`postgres.Docs.Upsert` replaces authors + links, preserves `created_at`), and emits a `reindex` job. Worker wires both via `errgroup` and exposes `newLeaseMetrics` bridging the queue's narrow metrics interface onto `obs.Metrics`.
+- `internal/server/handler/webhook.go` — webhook-driven reconcile. The HMAC-verified GitHub push handler parses the payload, matches touched `.md` paths against configured `SourceRepo` entries, and enqueues one `ingest` job per match (dedup `content:<head_commit.sha>` — the blob sha is resolved inside the ingest handler on fetch). The API and the worker share the `jobs` table through a single Postgres; no in-process queue between processes. `cmd/rfc-api/serve.go` wires `queue.New(pool, queue.Options{})` into `handler.NewWebhook`. Malformed payloads and unknown repos log-and-ack 202 so GitHub's retry loop doesn't hammer us on unmapped events.
 
 [IMPL-0004][impl-0004] is **in progress**. Phases 1–3 complete:
 

@@ -330,16 +330,44 @@ Plug the existing `/api/v1/webhooks/github` endpoint into the queue.
 
 #### Tasks
 
-- [ ] `internal/server/handler/webhook.go`: after HMAC verification
+- [x] `internal/server/handler/webhook.go`: after HMAC verification
       (already in place via IMPL-0001 Phase 2), parse the push payload,
       compute the affected paths, and enqueue one `ingest` job per
       touched document path.
-- [ ] The API replies 202 before any processing — the worker does the
+      *`Webhook` now takes a `WebhookConfig{Logger, Sources, Queue}`
+      (with a `WebhookEnqueuer` interface to keep the handler package
+      from importing `internal/worker/queue`). `handlePush` reads the
+      body, unmarshals to a narrow `pushPayload`, collects the touched
+      `.md` paths via `collectTouchedPaths`, matches each against
+      configured sources, and enqueues one `ingest` job per match with
+      dedup key `content:<head_commit.sha>`. The commit sha is a
+      placeholder — the ingest handler resolves the real blob sha when
+      it fetches the file. Nil `cfg` / nil `Queue` / empty `Sources` all
+      log-and-ack so back-compat tests pass.*
+- [x] The API replies 202 before any processing — the worker does the
       work. Latency SLA on 202 stays sub-100ms.
-- [ ] Cross-process note: the API writes to `jobs` via the same Postgres;
+      *`GitHub` dispatches to `handlePush` synchronously, but the only
+      in-handler work is a body read + JSON unmarshal + O(paths)
+      `Enqueue` calls; everything heavy (GitHub fetch, parse, write)
+      runs in the worker. `WriteHeader(202)` fires unconditionally at
+      the end of the switch — malformed payloads are logged at WARN and
+      still ack 202 (GitHub retries 4xx/5xx forever).*
+- [x] Cross-process note: the API writes to `jobs` via the same Postgres;
       the worker leases. No in-process queue between them.
-- [ ] Skip commits that only touch documents not mapped to any configured
+      *`cmd/rfc-api/serve.go` wires `queue.New(pool, queue.Options{})`
+      into the webhook config so `rfc-api serve` and `rfc-api work`
+      touch the same `jobs` table — the only coordination between
+      processes is the shared Postgres and the queue's
+      `(kind, dedup_key)` unique constraint.*
+- [x] Skip commits that only touch documents not mapped to any configured
       `SourceRepo.Path` — log at DEBUG but don't enqueue.
+      *`matchSource` filters by `Repo` + `Path` prefix + `.md` suffix;
+      misses are silently dropped so a push to `docs/unrelated.md` or
+      to `someone/else` doesn't create a no-op job. Removed paths map
+      to empty sha in `collectTouchedPaths` and are then `delete`d from
+      the map, so a pure-removal push enqueues nothing — the scanner
+      handles deletion on its next sweep rather than guessing the
+      document id from the webhook payload alone.*
 
 #### Success Criteria
 

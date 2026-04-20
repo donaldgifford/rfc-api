@@ -16,6 +16,7 @@ import (
 	"github.com/donaldgifford/rfc-api/internal/server/handler"
 	"github.com/donaldgifford/rfc-api/internal/service"
 	"github.com/donaldgifford/rfc-api/internal/store/postgres"
+	"github.com/donaldgifford/rfc-api/internal/worker/queue"
 )
 
 // runServe is the entry point for `rfc-api serve`.
@@ -72,10 +73,17 @@ func runServe(ctx context.Context, logger *slog.Logger, args []string) error {
 	docsSvc := service.NewDocs(docsStore, reg)
 	searchSvc := service.NewSearch(search.NoopClient{}, reg)
 	handlers := server.Handlers{
-		Docs:    handler.NewDocs(docsSvc),
-		Search:  handler.NewSearch(searchSvc),
-		Types:   handler.NewTypes(reg),
-		Webhook: handler.NewWebhook(logger),
+		Docs:   handler.NewDocs(docsSvc),
+		Search: handler.NewSearch(searchSvc),
+		Types:  handler.NewTypes(reg),
+		Webhook: handler.NewWebhook(&handler.WebhookConfig{
+			Logger:  logger,
+			Sources: cfg.Worker.SourceRepos,
+			// API shares the jobs table with the worker — both
+			// processes talk to the same Postgres; no in-process
+			// channel between them.
+			Queue: queue.New(pool, queue.Options{}),
+		}),
 	}
 
 	probes := []server.ReadinessProbe{server.AlwaysReady{}, postgres.Probe{Pool: pool}}

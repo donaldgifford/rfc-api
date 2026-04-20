@@ -31,7 +31,7 @@ func buildTestHandler(t *testing.T, types []config.DocumentType) http.Handler {
 		Docs:    handler.NewDocs(service.NewDocs(mem, reg)),
 		Search:  handler.NewSearch(service.NewSearch(search.NoopClient{}, reg)),
 		Types:   handler.NewTypes(reg),
-		Webhook: handler.NewWebhook(nil),
+		Webhook: handler.NewWebhook(nil), // handler tolerates nil config
 	}
 	return server.BuildMainHandler(handlers, reg, &server.V1Chain{}, "")
 }
