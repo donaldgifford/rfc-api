@@ -38,6 +38,7 @@ created: 2026-04-20
 - [Testing Plan](#testing-plan)
 - [Dependencies](#dependencies)
 - [Open Questions](#open-questions)
+- [Resolved Decisions](#resolved-decisions)
 - [References](#references)
 <!--toc:end-->
 
@@ -307,47 +308,42 @@ New Go modules:
 
 ## Open Questions
 
-1. **Single index with `type` filter vs per-type indexes.** ADR-0003
-   says single + filter. Per-type indexes would let us tune settings per
-   type (different synonyms, different ranking rules) but at the cost of
-   a cross-type search having to fan out N queries. Default: stick with
-   ADR-0003 (single index). Revisit only if we need per-type tuning.
-2. **Section-split depth.** Options: split only at H1, at H1+H2, at all
-   heading levels. Oxide splits at H1/H2. Default: H1+H2. Deeper splits
-   fragment hits; shallower ones lose the "hit resolves to a heading"
-   UX.
-3. **Search response shape: Meili-native vs domain-translated.** Meili
-   returns `hits`, `estimatedTotalHits`, `processingTimeMs`, etc. Our
-   clients want a more stable shape. Default: translate into
-   `{hits:[], total: int, facets: {}}` inside the API; don't leak
-   Meili's shape to clients (per ADR-0003 "consumers never address Meili
-   directly").
-4. **Cursor vs offset pagination.** Meili uses offset; our existing list
-   endpoints use cursor. For search, offset is fine (deep pagination
-   isn't a real use case), but we'd break the headers convention.
-   Default: use a synthetic cursor that encodes the offset — clients
-   still see `Link: …rel="next"`, implementation is offset under the
-   hood.
-5. **Reindex strategy: in-place vs alias-swap.** In-place is simpler
-   but a concurrent search can see partial state mid-reindex. Alias-swap
-   is atomic but needs a Meili feature or doubled write load. Default:
-   in-place for v1 because the corpus is small and upsert-by-id handles
-   partial state gracefully; revisit if reindex starts pinch-hitting
-   serving latency.
-6. **Excerpt length for `body_excerpt`.** 500 chars gives enough context
-   for highlights without bloating the index. Configurable? Default: a
-   hardcoded 500 until a consumer has a real reason to want it tunable.
-7. **Highlight rendering.** Meili returns highlighted text with
-   `<em>…</em>` tags by default. Do we return that markup as-is
-   (clients render it), or pre-strip and return `matched_terms` so
-   clients can re-highlight? Default: return both — the raw snippet
-   with tags and a separate `matched_terms` slice. Costs a few bytes
-   per hit; pays off for MCP tools that don't render HTML.
-8. **Meili auth-key lifetime.** Master key long-lived (bootstrap only);
-   read + write keys long-lived too, rotated on secret changes.
-   Should we support short-lived scoped keys (Meili supports JWT-style
-   tenant tokens)? Default: no; overkill for v1, and RFC-0001 Phase 4
-   OIDC will reshape auth anyway.
+None at this time. See [#Resolved Decisions](#resolved-decisions).
+
+## Resolved Decisions
+
+1. **Single index, `type` filter attribute.** Matches ADR-0003.
+   Per-type indexes are the right answer when per-type ranking rules
+   or synonyms become a real pain — not now. Migrating single → per-
+   type is a reindex, not a code change, so the cost is bounded and
+   deferred cleanly. Extensions flatten as `ext.<type_prefix>.<key>`
+   so wildly different schemas coexist without collision.
+2. **Section-split at H1+H2.** Hits resolve to headings, not whole
+   documents, per ADR-0003 #Ingest. Deeper fragments hits; shallower
+   loses the heading UX. Matches Oxide's split shape.
+3. **Domain-translated search response.** `{hits:[], total, facets}`
+   shape; Meili's native `hits` / `estimatedTotalHits` /
+   `processingTimeMs` does not leak to clients. Matches ADR-0003's
+   "consumers never address Meili directly."
+4. **Synthetic cursor encoding offset under the hood.** Clients see
+   the same `Link: …rel="next"` convention as the rest of the list
+   endpoints; Meili is offset-paginated underneath. Consistent
+   cross-endpoint behavior wins over implementation elegance.
+5. **In-place reindex for v1.** Upsert-by-id handles partial state
+   gracefully and the corpus is small. Alias-swap is the right answer
+   if reindex starts pinch-hitting serve latency — that's a
+   future-IMPL concern, not a blocker.
+6. **`body_excerpt` hardcoded at 500 chars.** Enough context for
+   highlights without bloating the index. Make it configurable when
+   a consumer has a concrete reason.
+7. **Return both highlighted snippet and `matched_terms`.** The
+   `<em>…</em>`-tagged snippet for HTML-rendering clients and a
+   separate `matched_terms []string` for clients that don't render
+   HTML (MCP tools, CLI). Costs a few bytes per hit; pays off.
+8. **Long-lived read/write keys, rotated on secret changes.**
+   Meili master key is bootstrap-only. No short-lived JWT-style
+   tenant tokens in v1 — RFC-0001 Phase 4 OIDC will reshape auth
+   anyway and a second key-lifecycle model before then is churn.
 
 ## References
 

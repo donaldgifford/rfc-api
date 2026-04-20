@@ -35,6 +35,7 @@ created: 2026-04-20
 - [Testing Plan](#testing-plan)
 - [Dependencies](#dependencies)
 - [Open Questions](#open-questions)
+- [Resolved Decisions](#resolved-decisions)
 - [References](#references)
 <!--toc:end-->
 
@@ -275,47 +276,40 @@ New Go modules:
 
 ## Open Questions
 
-1. **Plugin seam shape.** Compiled-in registry vs `plugin` package vs
-   subprocess. Default: compiled-in, because (a) Go `plugin` is
-   Linux/macOS-only and doesn't play with `goreleaser` distroless
-   images, (b) subprocess adds operational surface for no v1 benefit,
-   (c) compiled-in + a clean `Register()` seam keeps the door open.
-2. **Parser registration mechanism.** `package init()` (self-registers
-   on import) vs explicit `parser.Register(...)` from
-   `cmd/rfc-api/work.go` (centralized wiring). Default: explicit. It
-   makes the set of active parsers legible in one place and is friendlier
-   to tests that want to register only a subset.
-3. **`Extensions` catch-all representation.** `map[string]any` preserves
-   unknown keys lossily (empty maps, weird scalars). An alternative is
-   `json.RawMessage` so the wire shape is preserved verbatim. Default:
-   `map[string]any` per DESIGN-0002; revisit if a consumer starts
-   needing exact round-tripping.
-4. **Link-recognition rule.** Options: (a) Markdown links to `PREFIX-NNNN`
-   targets, (b) bare `PREFIX-NNNN` tokens anywhere, (c) an explicit
-   `links:` frontmatter field. Default: (a) + (b), because the docs we
-   already have use both patterns. An explicit frontmatter field is
-   additive if the heuristics get noisy.
-5. **Author representation.** docz writes a single comma-separated
-   `author` string today; `Document.Authors []Author` wants structured
-   entries. Does the parser split on comma (brittle) or does docz learn
-   to emit a structured list (needs a docz change)? Default: parser
-   splits, treats handles after `@` as `Handle`. Not great; flag for
-   a docz follow-up.
-6. **Lifecycle enforcement strictness.** Should a type that declares a
-   lifecycle reject any non-matching status (hard fail the ingest), or
-   log a warning and persist the document with the freeform status
-   (tolerant)? Default: hard fail — we'd rather an operator fix the
-   doc than serve a doc with an unrecognized status. Reversible if it
-   becomes a pain.
-7. **Commit metadata.** Should the parser populate `Document.Authors`
-   from Git commit metadata (`co-authored-by`) when frontmatter lacks
-   it, or leave that to the worker? Default: leave to the worker —
-   it has the Git context; the parser stays pure.
-8. **Tie-in with `docz` tooling.** We use `docz` in this repo already;
-   would co-evolving our parser with docz's own metadata schema be a
-   lift or unnecessary coupling? The current reading is that the
-   parser is stable-enough without it; `docz`'s job is authoring, ours
-   is ingesting. Flagged for confirmation.
+None at this time. See [#Resolved Decisions](#resolved-decisions).
+
+## Resolved Decisions
+
+1. **Compiled-in parser registry, no plugin loader.** Go `plugin` is
+   Linux/macOS-only and doesn't work with `goreleaser`'s distroless
+   runtime image; subprocess parsers add operational surface for no v1
+   win. A clean `Register()` seam keeps the door open for either later.
+2. **Explicit registration from `cmd/rfc-api/work.go`.** Parsers do
+   not self-register via `init()`. Centralized wiring means the active
+   parser set is visible in one place, and tests can register a subset
+   without mystery imports.
+3. **`Extensions` represented as `map[string]any`.** Matches
+   DESIGN-0002's default. If a consumer ever needs byte-for-byte
+   round-tripping, swap to `json.RawMessage` then.
+4. **Link recognition: Markdown-links + bare `PREFIX-NNNN` tokens.**
+   Both heuristics because our existing docs use both. An explicit
+   `links:` frontmatter field is additive if the heuristics get noisy.
+5. **Parser splits the `author` string on commas for now.** Handles
+   after `@` become `Author.Handle`. Brittle but works against the
+   docz output we have today — flagged for a docz follow-up to emit
+   a structured list instead.
+6. **Lifecycle violations hard-fail the ingest.** A type that declares
+   a `Lifecycle` rejects any non-matching status (`ErrUnknownStatus`
+   → 400 via `httperr`). We'd rather operators fix the doc than serve
+   one with an unrecognized status. Reversible if it bites.
+7. **Commit-metadata author fallback belongs to the worker, not the
+   parser.** When frontmatter lacks `author`, the worker fills from
+   `co-authored-by` before handing the doc to the indexer; the parser
+   stays pure (no Git, no I/O).
+8. **No co-evolution with `docz` tooling.** `docz` owns authoring,
+   this parser owns ingestion. Treat docz output as a format contract
+   the parser consumes; changes to docz are handled by bumping the
+   contract version, not by coupling the codebases.
 
 ## References
 
