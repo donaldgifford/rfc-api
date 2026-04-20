@@ -143,8 +143,13 @@ ships, changes become migrations rather than rewrites.
     timestamptz NOT NULL DEFAULT now()`. `UNIQUE (kind, dedup_key)` is
     the idempotency constraint; succeeded jobs are deleted (no `done`
     state) per IMPL-0003 RD5.
-- [ ] `rfc-api migrate` subcommand: reads `DATABASE_URL`, runs migrations,
+- [x] `rfc-api migrate` subcommand: reads `DATABASE_URL`, runs migrations,
       exits. Codes: 0 ok, 1 failure.
+      *Migrations are embedded via `db/embed.go` (`//go:embed
+      migrations/*.sql`) so the binary carries them. golang-migrate's
+      `iofs` source + postgres driver wire them against `DATABASE_URL`.
+      Verified end-to-end: fresh DB → migrate succeeds → re-run logs
+      "migrations already up to date".*
 - [ ] `make migrate` target (calls the subcommand).
 - [ ] `make ci` includes a smoke that spins Postgres up via compose (already
       wired), runs migrate, drops the DB — catches schema-only regressions.
