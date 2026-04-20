@@ -413,9 +413,12 @@ in RFC-0001 can be pointed at without further changes to `main`,
       `OTEL_EXPORTER_OTLP_*` env; head-based sampler at
       `RFC_API_TRACE_SAMPLE_RATIO`; no-op provider when endpoint
       unset (dev mode).
-- [ ] Log format: `slog` JSON handler → stdout at
-      `RFC_API_LOG_LEVEL`. Timestamp, level, message, all OTel
-      semconv fields emitted on every access log line.
+- [x] Log format: `slog` JSON handler → stdout at
+      `RFC_API_LOG_LEVEL` (debug|info|warn|error) and
+      `RFC_API_LOG_FORMAT` (json|text). Post-config, `slog.SetDefault`
+      is called so every package using `slog.Default()` gets the
+      configured logger. OTel semconv fields come from the Logger
+      middleware's per-request emission.
 
 **Makefile additions (pprof convenience)**
 

@@ -25,6 +25,16 @@ func runServe(ctx context.Context, logger *slog.Logger, args []string) error {
 		return fmt.Errorf("load config: %w", err)
 	}
 
+	// Rebuild the logger now that we know the configured level and
+	// format; install as slog default so every package that uses
+	// slog.Default picks it up (middleware, readiness, httperr).
+	logger = buildLogger(cfg.Log,
+		slog.String("service", "rfc-api"),
+		slog.String("version", version),
+		slog.String("commit", commit),
+	)
+	slog.SetDefault(logger)
+
 	tp, err := obs.NewTracerProvider(ctx, cfg.OTel, version, commit)
 	if err != nil {
 		return fmt.Errorf("build tracer provider: %w", err)
