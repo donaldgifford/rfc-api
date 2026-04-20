@@ -113,28 +113,47 @@ pattern.
 
 #### Tasks
 
-- [ ] `cmd/rfc-api/work.go`: replaces the "log start/stop, block on ctx"
+- [x] `cmd/rfc-api/work.go`: replaces the "log start/stop, block on ctx"
       stub. Parses worker flags, opens the same pool as `serve` (but read-
       write), runs the top-level loop.
-- [ ] `internal/config/config.go`: add `Worker` struct. Fields: `SourceRepos
+      *Loads config, opens the pgxpool, builds a registry, constructs
+      `worker.New`, and blocks on `Run(ctx)`. Tracer provider + obs
+      metrics wiring mirror serve.go so the worker reports on the same
+      OTel + Prometheus surfaces.*
+- [x] `internal/config/config.go`: add `Worker` struct. Fields: `SourceRepos
       []SourceRepo`, `ScannerInterval time.Duration` (default 5m),
       `ProcessorPollInterval time.Duration` (default 2s), `MaxConcurrent
       int` (default 4), `GitHubAppID`, `GitHubAppInstallationID`,
       `GitHubAppPrivateKey` (path or env-inlined — see OQ1).
-- [ ] `SourceRepo` shape: `TypeID string` (registry reference), `Repo
+      *`Worker` also holds `AdminListen` (default `127.0.0.1:8082` per
+      RD2) and `GitHubToken` (PAT fallback per RD1). All fields flow
+      through `RFC_API_WORKER_*` env vars and YAML.*
+- [x] `SourceRepo` shape: `TypeID string` (registry reference), `Repo
       string` (`owner/name`), `Path string` (relative to repo root),
       `Parser string` (parser registry key), `Branch string` (default
       `main`).
-- [ ] Validate at startup: every `SourceRepo.TypeID` exists in the document-
+- [x] Validate at startup: every `SourceRepo.TypeID` exists in the document-
       type registry. Fail loudly on mismatch.
-- [ ] `internal/worker/worker.go`: `Worker` struct with `Run(ctx) error`.
+      *`worker.New` runs source validation before the pool check; unit
+      tests cover unknown-type, missing-type_id/repo/path branches.*
+- [x] `internal/worker/worker.go`: `Worker` struct with `Run(ctx) error`.
       Sub-goroutines for scanner, processor, each tied to ctx via
       `errgroup.WithContext`.
-- [ ] Admin endpoints on the worker: `/healthz` unconditional 200,
+      *Scanner + processor are ticker-bound stubs in Phase 1; Phase 3
+      replaces the processor with a real queue-Lease loop, Phase 4
+      replaces the scanner.*
+- [x] Admin endpoints on the worker: `/healthz` unconditional 200,
       `/readyz` checks pool + last-successful-scan watermark. Port is
       separate from the API's admin port (see OQ2).
-- [ ] Exit codes: 0 graceful, 1 startup failure, 2 shutdown timeout —
+      *Worker reuses `server.NewAdmin` with three probes:
+      `AlwaysReady`, `poolProbe` (bounded Ping), and `scanProbe`
+      (watermark + 2x-interval staleness check). An idling worker with
+      no sources auto-passes the scan probe.*
+- [x] Exit codes: 0 graceful, 1 startup failure, 2 shutdown timeout —
       mirror the API's pattern.
+      *Run returns nil on `context.Canceled`; bad config / pool open
+      propagate to main() as a non-nil error → exit 1. Shutdown-budget
+      wiring is shared with serve.go's `errShutdownTimedOut` pattern.*
 
 #### Success Criteria
 

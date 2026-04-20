@@ -257,10 +257,16 @@ smoke-unknown: build ## Unknown subcommand exits 1
 		[ $$rc -eq 1 ] || { echo "✗ expected exit 1, got $$rc"; exit 1; }; \
 		echo "✓ unknown"
 
+## Smoke targets need a reachable Postgres (the pool pings on open
+## since IMPL-0002 Phase 2). Source .env when present so the smoke
+## rides the compose stack; callers can override DATABASE_URL in the
+## environment.
+SMOKE_DATABASE_URL ?= postgres://rfcapi:rfcapi@127.0.0.1:5432/rfcapi?sslmode=disable
+
 smoke-serve: build ## `rfc-api serve` handles SIGTERM cleanly (exit 0)
 	@ $(MAKE) --no-print-directory log-$@
 	@set -e; \
-		DATABASE_URL=postgres://x:y@127.0.0.1:5432/z \
+		DATABASE_URL="$${DATABASE_URL:-$(SMOKE_DATABASE_URL)}" \
 		MEILI_MASTER_KEY=smoke \
 		RFC_API_WEBHOOK_SECRET=smoke \
 		RFC_API_LISTEN=127.0.0.1:0 \
@@ -285,7 +291,7 @@ SOAK_ADMIN_PORT ?= 18181
 smoke-soak: build ## Drive synthetic traffic against `rfc-api serve` and assert no goroutine leak
 	@ $(MAKE) --no-print-directory log-$@
 	@set -e; \
-		DATABASE_URL=postgres://x:y@127.0.0.1:5432/z \
+		DATABASE_URL="$${DATABASE_URL:-$(SMOKE_DATABASE_URL)}" \
 		MEILI_MASTER_KEY=soak \
 		RFC_API_WEBHOOK_SECRET=soak \
 		RFC_API_LISTEN=127.0.0.1:$(SOAK_MAIN_PORT) \
@@ -323,13 +329,18 @@ smoke-soak: build ## Drive synthetic traffic against `rfc-api serve` and assert 
 smoke-work: build ## `rfc-api work` handles SIGTERM cleanly (exit 0)
 	@ $(MAKE) --no-print-directory log-$@
 	@set -e; \
+		DATABASE_URL="$${DATABASE_URL:-$(SMOKE_DATABASE_URL)}" \
+		MEILI_MASTER_KEY=smoke \
+		RFC_API_WEBHOOK_SECRET=smoke \
+		RFC_API_WORKER_ADMIN_LISTEN=127.0.0.1:0 \
 		$(BIN) work >/tmp/rfc-api.smoke-work.log 2>&1 & \
 		pid=$$!; \
 		sleep 0.5; \
 		kill -TERM $$pid; \
 		wait $$pid; rc=$$?; \
 		[ $$rc -eq 0 ] || { echo "✗ expected exit 0, got $$rc"; cat /tmp/rfc-api.smoke-work.log; exit 1; }; \
-		grep -q '"worker stopped"' /tmp/rfc-api.smoke-work.log || { echo "✗ no 'worker stopped' log"; cat /tmp/rfc-api.smoke-work.log; exit 1; }; \
+		grep -q 'worker started with no source_repos' /tmp/rfc-api.smoke-work.log || { echo "✗ no idle-start log"; cat /tmp/rfc-api.smoke-work.log; exit 1; }; \
+		grep -q '"admin server stopped"' /tmp/rfc-api.smoke-work.log || { echo "✗ no 'admin server stopped' log"; cat /tmp/rfc-api.smoke-work.log; exit 1; }; \
 		echo "✓ work"
 
 ## License Compliance
