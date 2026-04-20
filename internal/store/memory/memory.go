@@ -1,11 +1,12 @@
-// Package memory is an in-memory implementation of store.Docs,
-// seeded from JSON files matching the API wire format. Per IMPL-0001
-// the JSON files double as expected-response fixtures in integration
-// tests so one corpus backs both the seed and the contract checks.
+// Package memory is an in-process store.Docs used as a test fake.
+// Production code uses internal/store/postgres exclusively after
+// IMPL-0002 Phase 5; this package remains so server-, handler-, and
+// service-layer unit tests can exercise the full stack without a
+// database running.
 //
 // The store is read-only after construction and safe for concurrent
-// reads. Phase 3 replaces it with a real Postgres store; swapping
-// should not require any change under internal/server/.
+// reads. Tests that need write semantics use Add before the server
+// starts.
 package memory
 
 import (

@@ -58,6 +58,11 @@ handler change.
 **Implements:** [DESIGN-0001][design-0001] (Phase 1 of
 [RFC-0001][rfc-0001]).
 
+**Store update (2026-04-19):** The in-memory store described below was
+the Phase-2 deliverable. The production store is now Postgres per
+[IMPL-0002][impl-0002]; `internal/store/memory/` survives as a
+test-only `store.Docs` fake for unit suites that don't need a DB.
+
 **Status note (2026-04-20):** this IMPL is Completed for its declared
 scope — HTTP server, routing, middleware, observability, in-memory store,
 and OpenAPI contract test. Completing [RFC-0001][rfc-0001] end-to-end

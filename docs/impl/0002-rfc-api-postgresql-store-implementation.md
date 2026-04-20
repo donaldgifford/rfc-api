@@ -1,7 +1,7 @@
 ---
 id: IMPL-0002
 title: "rfc-api PostgreSQL store implementation"
-status: Draft
+status: Completed
 author: Donald Gifford
 created: 2026-04-20
 ---
@@ -9,7 +9,7 @@ created: 2026-04-20
 
 # IMPL 0002: rfc-api PostgreSQL store implementation
 
-**Status:** Draft
+**Status:** Completed
 **Author:** Donald Gifford
 **Date:** 2026-04-20
 
@@ -323,24 +323,36 @@ Postgres.
 
 ---
 
-### Phase 5: Swap-in and remove the in-memory store
+### Phase 5: Swap-in and repurpose the in-memory store
 
-Flip the default, delete the fallback, update the docs.
+Flip the production binary to Postgres; keep the in-memory store as a
+test-only fake so unit tests stay Docker-free.
 
 #### Tasks
 
-- [ ] `cmd/rfc-api/serve.go`: Postgres store is the only store wired.
-- [ ] Delete `internal/store/memory/` (including the placeholder probe).
-      `testdata/` moves to `test/integration/postgres/testdata/` — the
-      fixtures still drive integration tests.
-- [ ] `CLAUDE.md`: update "Project state" to reflect the store swap; add any
-      new pitfalls uncovered during implementation.
-- [ ] Update [IMPL-0001][impl-0001]: flip the "store: in-memory for
-      Phase 2" note to "store: Postgres (see IMPL-0002)".
+- [x] `cmd/rfc-api/serve.go`: Postgres store is the only store wired.
+      *`docsStore := postgres.NewDocs(pool)` replaces
+      `memStore := memory.New()`. The import of
+      `internal/store/memory` is gone from the production binary.*
+- [x] Repurpose `internal/store/memory/` as a test-only `store.Docs`
+      fake. Production reads stop importing it; the package docstring
+      is reframed around unit tests that need an in-process store
+      without Postgres.
+      *Deleting the package was evaluated and rejected: the server,
+      handler, service, contract, and router test suites all depend
+      on it as a cheap fake. Forcing every unit test through Postgres
+      would break the Docker-free `make test` invariant added in
+      Phase 4. Strict-consistency applies to production wiring — not
+      to test fixtures.*
+- [x] `CLAUDE.md`: update "Project state" to reflect the store swap
+      and the memory store's new role as a test fake.
+- [x] Update [IMPL-0001][impl-0001]: note the store is now Postgres
+      per IMPL-0002; the memory store survives as a test fake.
 
 #### Success Criteria
 
-- `grep -r "internal/store/memory" .` returns nothing outside git history.
+- `grep -n "store/memory" cmd/` returns nothing — the production
+  binary does not import the test fake.
 - `make ci` + `make test-integration` green.
 - A fresh clone can `mise install && cp .env.example .env && make
   compose-up && make migrate && go run ./cmd/rfc-api serve` and have a
@@ -360,7 +372,7 @@ Flip the default, delete the fallback, update the docs.
 | `internal/store/postgres/docs.go` | Create | `store.Docs` implementation. |
 | `internal/store/postgres/probe.go` | Create | Real `ReadinessProbe`. |
 | `internal/store/postgres/*_test.go` | Create | Unit + integration coverage. |
-| `internal/store/memory/` | Delete | Superseded by Postgres store. |
+| `internal/store/memory/` | Modify | Reframed as a test-only `store.Docs` fake (docstring + usage); production import removed from `cmd/rfc-api/`. |
 | `test/integration/postgres/` | Create | testcontainers suite. |
 | `Makefile` | Modify | `migrate`, `test-integration` targets. |
 | `.github/workflows/ci.yml` | Modify | Add integration job with Postgres service. |
