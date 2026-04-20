@@ -643,7 +643,7 @@ what Phase 2 proves.
 - [x] Registry test: register a fake type `test` and assert the
       full per-type route set is mounted and responsive — proves
       DESIGN-0002's "adding a type is a config change" claim.
-- [ ] Integration: full server against `httptest.NewServer`,
+- [x] Integration: full server against `httptest.NewServer`,
       exercise request-id propagation, error envelope,
       pagination headers, rate-limit 429, webhook HMAC positive
       + negative, CORS preflight.
