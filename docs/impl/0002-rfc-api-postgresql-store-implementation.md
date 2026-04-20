@@ -150,7 +150,11 @@ ships, changes become migrations rather than rewrites.
       `iofs` source + postgres driver wire them against `DATABASE_URL`.
       Verified end-to-end: fresh DB → migrate succeeds → re-run logs
       "migrations already up to date".*
-- [ ] `make migrate` target (calls the subcommand).
+- [x] `make migrate` target (calls the subcommand).
+      *Sources `.env` (when present) then shells out to
+      `go run ./cmd/rfc-api migrate`. Also added `make migrate-down`
+      (gated on `CONFIRM=1`) that uses the golang-migrate CLI for
+      dev rollback.*
 - [ ] `make ci` includes a smoke that spins Postgres up via compose (already
       wired), runs migrate, drops the DB — catches schema-only regressions.
 

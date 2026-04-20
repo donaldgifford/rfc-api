@@ -153,6 +153,29 @@ compose-logs: ## Tail compose logs (usage: make compose-logs SERVICE=postgres; o
 	@docker compose logs -f --tail=100 $(SERVICE)
 
 ###############
+##@ Database
+
+.PHONY: migrate migrate-down
+
+migrate: ## Apply pending database migrations (reads DATABASE_URL from .env / env)
+	@ $(MAKE) --no-print-directory log-$@
+	@set -a; [ -f .env ] && . ./.env; set +a; \
+		go run ./cmd/rfc-api migrate
+
+migrate-down: ## Reverse every migration (dev-only; requires CONFIRM=1)
+	@ $(MAKE) --no-print-directory log-$@
+	@if [ "$(CONFIRM)" != "1" ]; then \
+		printf "This will DROP every table in DATABASE_URL. Continue? [y/N] "; \
+		read -r REPLY; \
+		case "$$REPLY" in \
+			[yY]|[yY][eE][sS]) ;; \
+			*) echo "aborted."; exit 1 ;; \
+		esac; \
+	fi
+	@set -a; [ -f .env ] && . ./.env; set +a; \
+		mise exec -- migrate -path db/migrations -database "$$DATABASE_URL" down -all
+
+###############
 ##@ pprof
 
 ADMIN_URL ?= http://localhost:8081
