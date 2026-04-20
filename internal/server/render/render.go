@@ -11,6 +11,7 @@ import (
 	"log/slog"
 	"net/http"
 	"net/url"
+	"reflect"
 	"strconv"
 	"strings"
 )
@@ -47,6 +48,10 @@ func JSON(w http.ResponseWriter, status int, v any) {
 // r is required so the Link header's URLs mirror the caller's
 // request path — callers following next/prev hit the same endpoint
 // with the right query-string overrides.
+//
+// A nil items slice is treated as an empty array so the response
+// body is always JSON `[]` (never `null`). The OpenAPI contract
+// test is strict about this and real clients get a cleaner shape.
 func ArrayJSON(w http.ResponseWriter, r *http.Request, items any, info PageInfo) {
 	h := w.Header()
 	h.Set("Content-Type", contentType)
@@ -55,9 +60,23 @@ func ArrayJSON(w http.ResponseWriter, r *http.Request, items any, info PageInfo)
 		h.Set("Link", link)
 	}
 	w.WriteHeader(http.StatusOK)
-	if err := json.NewEncoder(w).Encode(items); err != nil {
+	payload := items
+	if isNilSlice(items) {
+		payload = []struct{}{}
+	}
+	if err := json.NewEncoder(w).Encode(payload); err != nil {
 		slog.Default().Error("render.ArrayJSON encode", "err", err.Error())
 	}
+}
+
+// isNilSlice reports whether v is a typed-nil slice. Needed because
+// (any)(nil-typed-slice) != nil but marshals to JSON null.
+func isNilSlice(v any) bool {
+	if v == nil {
+		return true
+	}
+	rv := reflect.ValueOf(v)
+	return rv.Kind() == reflect.Slice && rv.IsNil()
 }
 
 // buildLinkHeader assembles the RFC 8288 Link header with rel="next"

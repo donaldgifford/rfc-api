@@ -89,6 +89,9 @@ func (h *Docs) Links(w http.ResponseWriter, r *http.Request) {
 		httperr.Write(w, r, err)
 		return
 	}
+	if links == nil {
+		links = []domain.Link{}
+	}
 	render.JSON(w, http.StatusOK, links)
 }
 
@@ -114,6 +117,9 @@ func (h *Docs) Authors(w http.ResponseWriter, r *http.Request) {
 	if err != nil {
 		httperr.Write(w, r, err)
 		return
+	}
+	if authors == nil {
+		authors = []domain.Author{}
 	}
 	render.JSON(w, http.StatusOK, authors)
 }

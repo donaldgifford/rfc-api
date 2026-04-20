@@ -705,14 +705,14 @@ before Phase 3 of RFC-0001 (real cluster deploy) is storage.
 
 **Contract**
 
-- [ ] `api/openapi.yaml`: every endpoint (main + admin), every
+- [x] `api/openapi.yaml`: every endpoint (main + admin), every
       status code, every parameter. Hand-authored; no codegen.
       Target **OAS 3.1** (current spec version, JSON-Schema
       2020-12 alignment).
-- [ ] `test/contract/contract_test.go`: spin up the full server
+- [x] `test/contract/contract_test.go`: spin up the full server
       against `httptest.NewServer`, validate each response
       against the spec using **`github.com/getkin/kin-openapi`**.
-- [ ] README section pointing `rfc-site` / MCP authors at
+- [x] README section pointing `rfc-site` / MCP authors at
       `api/openapi.yaml` as the source of truth.
 
 **Coverage + hygiene**

@@ -31,11 +31,15 @@ func (h *Types) List(w http.ResponseWriter, _ *http.Request) {
 	items := h.registry.List()
 	out := make([]typeDTO, len(items))
 	for i := range items {
+		statuses := items[i].Lifecycle
+		if statuses == nil {
+			statuses = []string{}
+		}
 		out[i] = typeDTO{
 			ID:            items[i].ID,
 			DisplayPrefix: items[i].Prefix,
 			Title:         items[i].Name,
-			Statuses:      items[i].Lifecycle,
+			Statuses:      statuses,
 		}
 	}
 	render.JSON(w, http.StatusOK, out)
