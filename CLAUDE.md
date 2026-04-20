@@ -99,6 +99,7 @@ Before proposing architectural changes or writing code, check the relevant doc's
 - **Any change to `api/openapi.yaml` must keep `test/contract/` green.** The spec and handlers are validated against each other in-process on every CI run.
 - **A new `domain.Err*` sentinel requires a matching case in `httperr.classify`.** Otherwise it silently falls through to the 500 default and the client detail is replaced with the fixed "an internal error occurred" string. This seam is how the rate-limit 429-vs-500 bug shipped: the error was passed to `httperr.Write` but no classifier case matched, so the response was 500 / problem+json even though `Retry-After` was set.
 - **HTTP status assertions in tests are exact, not `!= 200`.** A permissive check like `rec.Code != 200` passed for a request that should have returned 429 but was actually returning 500. Assert the specific expected status (and, where it matters, `Content-Type: application/problem+json` for error paths).
+- **Never use `§` (section symbol) in this repo.** Use plain `#` for section references in comments, markdown, configs, commit messages, and PR bodies. The 28-file cleanup that introduced this rule is in git history — don't reintroduce it.
 
 ## Pitfalls the tooling is opinionated about
 
