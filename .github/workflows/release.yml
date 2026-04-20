@@ -59,6 +59,10 @@ jobs:
         uses: crazy-max/ghaction-import-gpg@v7
         with:
           gpg_private_key: ${{ secrets.GPG_PRIVATE_KEY }}
+          fingerprint: "C47D59D86FC24BAEC5BB32712E2CEA0BC2BD8D59"
+
+      - name: List keys
+        run: gpg -K
 
       - name: Run GoReleaser
         uses: goreleaser/goreleaser-action@v7
