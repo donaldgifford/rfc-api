@@ -222,27 +222,44 @@ Lock-skip-locked gives us a work-stealing queue without an external broker.
 
 #### Tasks
 
-- [ ] `internal/worker/queue/queue.go`: `Queue{pool}`. Methods:
-  - `Enqueue(ctx, kind, payload, runAfter)` — inserts with conflict on the
-    `(kind, content_sha)` unique constraint; ON CONFLICT DO UPDATE to bump
-    `run_after` (a re-queue, not a dupe).
-  - `Lease(ctx, workerID, kinds []string, n int)` — `SELECT … FROM jobs
-    WHERE state='queued' AND run_after <= now() AND kind = ANY($1)
-    ORDER BY run_after, created_at FOR UPDATE SKIP LOCKED LIMIT $2`;
-    then `UPDATE jobs SET state='leased', locked_by=$workerID,
-    locked_at=now(), attempts=attempts+1`.
-  - `Succeed(ctx, id)` — delete (or archive per OQ5).
-  - `Fail(ctx, id, err)` — `UPDATE … SET state='queued', run_after=now()
-    + backoff(attempts)`; promotes to `state='dead'` after N attempts.
-- [ ] `internal/worker/queue/leaser.go`: per-job-kind goroutine with
-      configurable concurrency. Uses a semaphore so a single kind can't
-      starve others.
-- [ ] Expose Prometheus metrics on the worker's admin port:
+- [x] `internal/worker/queue/queue.go`: `Queue{pool}`. Methods:
+  - `Enqueue(ctx, kind, dedup_key, payload, runAfter)` — inserts with
+    conflict on the `(kind, dedup_key)` unique constraint; ON CONFLICT
+    DO UPDATE bumps `run_after` via GREATEST() so a re-queue never
+    regresses the schedule.
+  - `Lease(ctx, workerID, kinds []string, n int)` — CTE-based
+    `FOR UPDATE SKIP LOCKED` select + atomic UPDATE to `leased`,
+    returning the scanned `Job` slice in one round trip.
+  - `Succeed(ctx, id)` — DELETE per RD5.
+  - `Fail(ctx, id, attempts, cause)` — exponential-with-jitter
+    requeue, promoted to `state='dead'` once attempts ≥ MaxAttempts
+    with the cause breadcrumbed into `payload._last_error`.
+  - `Depth(ctx)` returns the `(kind,state) → count` map the worker
+    samples for the queue-depth gauge.
+  *Integration tests (`//go:build integration`) cover enqueue
+  idempotency, two-worker SKIP-LOCKED disjoint leases, backoff
+  requeue, dead-letter after MaxAttempts, Succeed deletion, and
+  Depth aggregation.*
+- [x] `internal/worker/queue/leaser.go`: per-kind goroutine with
+      configurable concurrency. Uses a semaphore so a single kind
+      can't starve others.
+      *`NewLeaser` constructs a Leaser bound to N job kinds; each
+      kind has its own concurrency slot. `Run(ctx)` ticks at
+      `ProcessorPoll` and dispatches leased jobs via `dispatch`,
+      which runs the handler under panic recovery and reports
+      success/failure back to the queue. A panicking handler produces
+      a failed (and eventually dead-lettered) job, not a dead worker.*
+- [x] Expose Prometheus metrics on the worker's admin port:
       `rfc_api_worker_jobs_leased_total{kind}`,
       `rfc_api_worker_jobs_completed_total{kind,result}`,
       `rfc_api_worker_job_duration_seconds{kind}`,
       `rfc_api_worker_jobs_dead_total{kind}`,
       `rfc_api_worker_queue_depth{kind,state}`.
+      *All five metrics registered on `obs.Metrics` and surfaced via
+      the worker's `/metrics` endpoint. `queue.LeaseMetrics` is a
+      narrow interface so the queue package stays framework-free;
+      the worker will wire an adapter onto `obs.Metrics` in Phase 4
+      when the leaser is hooked into the real processor loop.*
 
 #### Success Criteria
 

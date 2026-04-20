@@ -8,9 +8,9 @@ import (
 	"github.com/prometheus/client_golang/prometheus/promhttp"
 )
 
-// Metrics bundles the Prometheus collectors the HTTP middleware
-// writes to. A single Metrics instance is shared by the main server;
-// the admin server exposes it via /metrics.
+// Metrics bundles the Prometheus collectors the HTTP middleware +
+// worker queue write to. A single Metrics instance is shared across
+// the process; the admin server exposes it via /metrics.
 //
 // Registry is a fresh Registry (not the global promauto one) so test
 // servers don't fight over a shared global. The admin handler
@@ -20,6 +20,11 @@ type Metrics struct {
 	RequestsTotal   *prometheus.CounterVec
 	RequestDuration *prometheus.HistogramVec
 	InFlight        prometheus.Gauge
+	JobsLeased      *prometheus.CounterVec
+	JobsCompleted   *prometheus.CounterVec
+	JobsDead        *prometheus.CounterVec
+	JobDuration     *prometheus.HistogramVec
+	JobQueueDepth   *prometheus.GaugeVec
 }
 
 // labels are the three low-cardinality dimensions the HTTP middleware
@@ -70,7 +75,45 @@ func NewMetrics() *Metrics {
 			},
 		),
 	}
-	reg.MustRegister(m.RequestsTotal, m.RequestDuration, m.InFlight)
+	m.JobsLeased = prometheus.NewCounterVec(
+		prometheus.CounterOpts{
+			Name: "rfc_api_worker_jobs_leased_total",
+			Help: "Total jobs leased, by kind.",
+		},
+		[]string{"kind"},
+	)
+	m.JobsCompleted = prometheus.NewCounterVec(
+		prometheus.CounterOpts{
+			Name: "rfc_api_worker_jobs_completed_total",
+			Help: "Total jobs completed, by kind and result (ok|error|dead).",
+		},
+		[]string{"kind", "result"},
+	)
+	m.JobsDead = prometheus.NewCounterVec(
+		prometheus.CounterOpts{
+			Name: "rfc_api_worker_jobs_dead_total",
+			Help: "Jobs that exhausted their retry budget and moved to dead.",
+		},
+		[]string{"kind"},
+	)
+	m.JobDuration = prometheus.NewHistogramVec(
+		prometheus.HistogramOpts{
+			Name:    "rfc_api_worker_job_duration_seconds",
+			Help:    "End-to-end job handler duration, by kind.",
+			Buckets: durationBuckets,
+		},
+		[]string{"kind"},
+	)
+	m.JobQueueDepth = prometheus.NewGaugeVec(
+		prometheus.GaugeOpts{
+			Name: "rfc_api_worker_queue_depth",
+			Help: "Rows in the jobs table, by kind and state.",
+		},
+		[]string{"kind", "state"},
+	)
+
+	reg.MustRegister(m.RequestsTotal, m.RequestDuration, m.InFlight,
+		m.JobsLeased, m.JobsCompleted, m.JobsDead, m.JobDuration, m.JobQueueDepth)
 	reg.MustRegister(collectors.NewGoCollector())
 	reg.MustRegister(collectors.NewProcessCollector(collectors.ProcessCollectorOpts{}))
 	return m
