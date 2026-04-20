@@ -279,30 +279,38 @@ flow.
 
 #### Tasks
 
-- [ ] `internal/worker/scanner/scanner.go`: per-source periodic loop. On
-      each tick: enumerate files via the GitHub client, diff against
-      `documents.source_commit`, enqueue `ingest` jobs for anything new
-      or changed.
-- [ ] `internal/worker/ingest/ingest.go`: the `ingest` job handler. Per
-      job:
+- [x] `internal/worker/scanner/scanner.go`: per-source periodic loop.
+      On each tick: enumerate files via the GitHub client, diff
+      against `documents.source_commit`, enqueue `ingest` jobs for
+      anything new or changed.
+      *`Pass` runs one synchronous sweep for testability; `Run`
+      ticks every `ScannerInterval` and fires `OnScan` after each
+      successful pass so `/readyz` flips healthy.*
+- [x] `internal/worker/ingest/ingest.go`: the `ingest` job handler.
+      Per job:
   1. Fetch file content + sha from GitHub.
-  2. Look up the parser by name (from `SourceRepo.Parser`, registered in
-     IMPL-0004).
+  2. Look up the parser by name (from `SourceRepo.Parser`, registered
+     in IMPL-0004).
   3. Parse via `parser.Parse(content, docType, source)`.
-  4. In a single transaction: upsert `documents`, replace `authors`,
-     replace `links`, upsert `discussion` summary (comment_count=0
-     placeholder; Phase 6 populates).
-  5. Enqueue a `reindex` job with the document id — consumed by
-     IMPL-0005's Meilisearch writer.
-- [ ] Upsert semantics: `ON CONFLICT (id) DO UPDATE` setting every field
-      except `created_at`. Return the affected row so the caller can log.
-- [ ] Idempotency: the job's `content_sha` is the file sha; the unique
-      constraint on `(kind, content_sha)` prevents duplicates while the
-      job is in flight. Post-success, the check is cheap: comparing
-      `documents.source_commit == fetched_sha` short-circuits the parse.
-- [ ] Deletion: a scanner pass that notices a file is gone enqueues a
-      `tombstone` job (or hard-deletes per OQ4). Default: hard delete
-      with CASCADE; DESIGN-0002 already allows re-ingestion to replace.
+  4. `store.Upsert` does the documents/authors/links transaction in
+     one call (IMPL-0002 Phase 5 stub is now real).
+  5. Enqueue a `reindex` job keyed `doc:<id>` for IMPL-0005.
+      *Unit tests cover happy path, sha drift (concurrent push →
+      skip with no upsert), unknown type, and malformed payload.
+      Discussion population lives in Phase 6.*
+- [x] Upsert semantics: `ON CONFLICT (id) DO UPDATE` on every field
+      **except `created_at`** so the archival timestamp is stable
+      across re-ingests (proven by
+      `TestUpsert_PreservesCreatedAt`).
+- [x] Idempotency: job `dedup_key` is `content:<sha>`; the Queue's
+      unique constraint on `(kind, dedup_key)` collapses duplicate
+      enqueues. Ingest's own sha-drift check short-circuits when
+      the remote file has already moved past the scanner's sha.
+- [x] Deletion: hard delete per RD4. `postgres.Docs.Delete` cascades
+      through `authors`, `links`, `discussions` via the schema's
+      `ON DELETE CASCADE`. Scanner's `scanSource` deletes any doc
+      whose `documents.source_path` is no longer in the remote
+      listing.
 
 #### Success Criteria
 

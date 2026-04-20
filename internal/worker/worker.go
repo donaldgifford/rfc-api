@@ -18,6 +18,7 @@ import (
 	"errors"
 	"fmt"
 	"log/slog"
+	"os"
 	"sync/atomic"
 	"time"
 
@@ -28,8 +29,22 @@ import (
 	"github.com/donaldgifford/rfc-api/internal/config"
 	"github.com/donaldgifford/rfc-api/internal/domain"
 	"github.com/donaldgifford/rfc-api/internal/obs"
+	"github.com/donaldgifford/rfc-api/internal/parser"
 	"github.com/donaldgifford/rfc-api/internal/server"
+	"github.com/donaldgifford/rfc-api/internal/worker/githubsource"
+	"github.com/donaldgifford/rfc-api/internal/worker/ingest"
+	"github.com/donaldgifford/rfc-api/internal/worker/queue"
+	"github.com/donaldgifford/rfc-api/internal/worker/scanner"
 )
+
+// IngestStore is the narrow store surface the worker needs. A real
+// *postgres.Docs satisfies this; tests inject fakes. Interface lives
+// here so worker doesn't import internal/store/postgres directly.
+type IngestStore interface {
+	Upsert(ctx context.Context, doc *domain.Document) error
+	ExistingSources(ctx context.Context, repo, basePath string) (map[string]string, error)
+	Delete(ctx context.Context, id domain.DocumentID) error
+}
 
 // Deps are the dependencies Run consumes. Taken by pointer so the
 // caller pays a pointer cost, not a 100+ byte struct copy.
@@ -37,6 +52,8 @@ type Deps struct {
 	Config         config.Worker
 	Registry       domain.DocumentTypeRegistry
 	Pool           *pgxpool.Pool
+	Store          IngestStore
+	Parsers        *parser.Registry
 	TracerProvider trace.TracerProvider
 	Metrics        *obs.Metrics
 	Logger         *slog.Logger
@@ -55,6 +72,11 @@ type Worker struct {
 	admin    *server.AdminServer
 	sources  []config.SourceRepo
 	disabled bool
+	registry domain.DocumentTypeRegistry
+	store    IngestStore
+	parsers  *parser.Registry
+	github   *githubsource.Client
+	queue    *queue.Queue
 }
 
 // readyState is the watermark the /readyz probe reads. Atomic so the
@@ -114,9 +136,45 @@ func New(deps *Deps) (*Worker, error) {
 		ready:    &readyState{},
 		sources:  deps.Config.SourceRepos,
 		disabled: len(deps.Config.SourceRepos) == 0,
+		registry: deps.Registry,
+		store:    deps.Store,
+		parsers:  deps.Parsers,
 	}
+
+	// GitHub client is only built when the worker has sources —
+	// running idling (no sources configured) must not require
+	// credentials.
+	if !w.disabled {
+		client, err := buildGitHubClient(&deps.Config)
+		if err != nil {
+			return nil, err
+		}
+		w.github = client
+	}
+
+	w.queue = queue.New(deps.Pool, queue.Options{})
 	w.admin = w.buildAdmin()
 	return w, nil
+}
+
+// buildGitHubClient picks App-based auth when configured, else
+// PAT. Returns a clear error when neither is available so the
+// operator sees the cause at startup, not on the first scan.
+func buildGitHubClient(cfg *config.Worker) (*githubsource.Client, error) {
+	gh := githubsource.Config{
+		AppID:          cfg.GitHubAppID,
+		InstallationID: cfg.GitHubAppInstallationID,
+		PrivateKey:     []byte(cfg.GitHubAppPrivateKey),
+		Token:          cfg.GitHubToken,
+	}
+	if len(gh.PrivateKey) == 0 && gh.Token == "" {
+		return nil, fmt.Errorf("worker: need GITHUB_TOKEN or App creds when source_repos is non-empty")
+	}
+	client, err := githubsource.New(&gh)
+	if err != nil {
+		return nil, fmt.Errorf("build github client: %w", err)
+	}
+	return client, nil
 }
 
 // Run starts the admin port and sub-loops, blocking until ctx is
@@ -151,42 +209,77 @@ func (w *Worker) Run(ctx context.Context) error {
 	return ctx.Err()
 }
 
-// runScanner is the Phase-1 stub. Phase 4 fills in per-source
-// enumeration + ingest-job enqueuing. Staying as a ctx-bound sleep
-// loop here keeps the goroutine budget + lifecycle pipe observable.
+// runScanner owns the periodic source sweep. Builds a
+// scanner.Scanner once and hands it the watermark-write closure so
+// /readyz flips to healthy after the first successful pass.
 func (w *Worker) runScanner(ctx context.Context) error {
-	t := time.NewTicker(w.cfg.ScannerInterval)
-	defer t.Stop()
-
-	for {
-		select {
-		case <-ctx.Done():
-			return nil
-		case <-t.C:
-			w.logger.DebugContext(ctx, "scanner tick (stub)",
-				"sources", len(w.sources))
-			w.ready.MarkScanned(time.Now())
-		}
+	if w.store == nil {
+		return errors.New("worker: nil store; cannot scan")
 	}
+	s, err := scanner.New(&scanner.Config{
+		Sources:  w.sources,
+		Fetcher:  w.github,
+		Store:    w.store,
+		Queue:    w.queue,
+		Interval: w.cfg.ScannerInterval,
+		Logger:   w.logger,
+		OnScan:   w.ready.MarkScanned,
+	})
+	if err != nil {
+		return fmt.Errorf("scanner: %w", err)
+	}
+	return s.Run(ctx)
 }
 
-// runProcessor is the Phase-1 stub. Phase 3 wires the queue Lease
-// loop; Phase 4 hooks the ingest handler. The current body polls at
-// the configured interval and no-ops so operators can see the loop is
-// alive in logs.
+// runProcessor owns the queue-lease loop. Builds the per-kind
+// handler map and hands it to queue.Leaser. Phase 4 wires the
+// `ingest` kind; `reindex` lands in IMPL-0005 and `discussion_fetch`
+// in Phase 6 — they register later via adding entries here.
 func (w *Worker) runProcessor(ctx context.Context) error {
-	t := time.NewTicker(w.cfg.ProcessorPollInterval)
-	defer t.Stop()
-
-	for {
-		select {
-		case <-ctx.Done():
-			return nil
-		case <-t.C:
-			// No work queued yet; nothing to do. Drops back to the
-			// ticker.
-		}
+	if w.store == nil || w.parsers == nil {
+		return errors.New("worker: nil store or parsers; cannot process")
 	}
+	ingestHandler, err := ingest.New(&ingest.Config{
+		Store:   w.store,
+		Fetcher: w.github,
+		Queue:   w.queue,
+		Parsers: w.parsers,
+		Types:   w.registry,
+		Logger:  w.logger,
+	})
+	if err != nil {
+		return fmt.Errorf("ingest handler: %w", err)
+	}
+
+	workerID := queue.WorkerID(hostname(), os.Getpid())
+	leaser, err := queue.NewLeaser(&queue.LeaserOptions{
+		Queue:    w.queue,
+		WorkerID: workerID,
+		Interval: w.cfg.ProcessorPollInterval,
+		Logger:   w.logger,
+		Metrics:  newLeaseMetrics(w.metrics),
+		Kinds: map[string]queue.KindConfig{
+			ingest.Kind: {
+				Handler:     ingestHandler.Handle,
+				Concurrency: w.cfg.MaxConcurrent,
+			},
+		},
+	})
+	if err != nil {
+		return fmt.Errorf("build leaser: %w", err)
+	}
+	return leaser.Run(ctx)
+}
+
+// hostname returns the host or a stable fallback when lookup fails —
+// the worker id just needs to be distinguishable across processes,
+// not resolvable.
+func hostname() string {
+	h, err := os.Hostname()
+	if err != nil || h == "" {
+		return "unknown"
+	}
+	return h
 }
 
 // buildAdmin composes the worker's admin-port HTTP server. Reuses

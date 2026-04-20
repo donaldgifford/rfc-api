@@ -210,11 +210,178 @@ func (d *Docs) Revisions(ctx context.Context, id domain.DocumentID) ([]store.Rev
 // Upsert is a Phase-3 stub per IMPL-0002 RD7. Present on the interface
 // so IMPL-0003 and IMPL-0005 can target a stable contract; returns a
 // well-known error until the worker is wired.
-func (*Docs) Upsert(_ context.Context, doc *domain.Document) error {
-	return fmt.Errorf(
-		"upsert %s: not implemented in IMPL-0002; worker write path lands in IMPL-0003",
-		doc.ID,
-	)
+// Upsert inserts or replaces a document + its authors + its links in
+// a single transaction. Preserves documents.created_at on update so
+// the registered-at timestamp is stable across re-ingests (RFC-0001
+// Sync: the store is rebuildable from Git but CreatedAt is an
+// archival signal). Discussions are owned by the Phase-6 discussion
+// fetcher, not this path.
+func (d *Docs) Upsert(ctx context.Context, doc *domain.Document) error {
+	if doc == nil {
+		return errors.New("upsert: nil document")
+	}
+	if doc.ID == "" {
+		return fmt.Errorf("%w: document id is required", domain.ErrInvalidInput)
+	}
+	if doc.Type == "" {
+		return fmt.Errorf("%w: document type is required", domain.ErrInvalidInput)
+	}
+
+	tx, err := d.pool.BeginTx(ctx, pgx.TxOptions{})
+	if err != nil {
+		return upstream("begin upsert", err)
+	}
+	defer func() {
+		//nolint:errcheck,gosec // rollback on commit-success is a no-op; on failure path the caller already has the cause.
+		tx.Rollback(ctx)
+	}()
+
+	if err := upsertDocument(ctx, tx, doc); err != nil {
+		return err
+	}
+	if err := replaceAuthors(ctx, tx, doc); err != nil {
+		return err
+	}
+	if err := replaceLinks(ctx, tx, doc); err != nil {
+		return err
+	}
+
+	if err := tx.Commit(ctx); err != nil {
+		return upstream("commit upsert", err)
+	}
+	return nil
+}
+
+func upsertDocument(ctx context.Context, tx pgx.Tx, doc *domain.Document) error {
+	const stmt = `
+		INSERT INTO documents (
+			id, type, title, status, body,
+			created_at, updated_at,
+			labels, extensions,
+			source_repo, source_path, source_commit
+		)
+		VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12)
+		ON CONFLICT (id) DO UPDATE SET
+			type          = EXCLUDED.type,
+			title         = EXCLUDED.title,
+			status        = EXCLUDED.status,
+			body          = EXCLUDED.body,
+			updated_at    = EXCLUDED.updated_at,
+			labels        = EXCLUDED.labels,
+			extensions    = EXCLUDED.extensions,
+			source_repo   = EXCLUDED.source_repo,
+			source_path   = EXCLUDED.source_path,
+			source_commit = EXCLUDED.source_commit
+	`
+	labels := doc.Labels
+	if labels == nil {
+		labels = []string{}
+	}
+	ext := doc.Extensions
+	if ext == nil {
+		ext = map[string]any{}
+	}
+	if _, err := tx.Exec(ctx, stmt,
+		string(doc.ID), doc.Type, doc.Title, doc.Status, doc.Body,
+		nonZeroTime(doc.CreatedAt), nonZeroTime(doc.UpdatedAt),
+		labels, ext,
+		doc.Source.Repo, doc.Source.Path, doc.Source.Commit,
+	); err != nil {
+		return upstream("upsert documents", err)
+	}
+	return nil
+}
+
+func replaceAuthors(ctx context.Context, tx pgx.Tx, doc *domain.Document) error {
+	if _, err := tx.Exec(ctx,
+		`DELETE FROM authors WHERE document_id = $1`, string(doc.ID)); err != nil {
+		return upstream("clear authors", err)
+	}
+	if len(doc.Authors) == 0 {
+		return nil
+	}
+	const stmt = `INSERT INTO authors (document_id, seq, name, email, handle)
+	              VALUES ($1,$2,$3,$4,$5)`
+	for i, a := range doc.Authors {
+		if _, err := tx.Exec(ctx, stmt, string(doc.ID), i, a.Name, a.Email, a.Handle); err != nil {
+			return upstream(fmt.Sprintf("insert author[%d]", i), err)
+		}
+	}
+	return nil
+}
+
+func replaceLinks(ctx context.Context, tx pgx.Tx, doc *domain.Document) error {
+	if _, err := tx.Exec(ctx,
+		`DELETE FROM links WHERE source_id = $1`, string(doc.ID)); err != nil {
+		return upstream("clear links", err)
+	}
+	if len(doc.Links) == 0 {
+		return nil
+	}
+	const stmt = `INSERT INTO links (source_id, target_id, direction, label)
+	              VALUES ($1,$2,$3,$4)`
+	for i, l := range doc.Links {
+		dir := string(l.Direction)
+		if dir == "" {
+			dir = string(domain.LinkOutgoing)
+		}
+		if _, err := tx.Exec(ctx, stmt,
+			string(doc.ID), string(l.Target), dir, l.Label); err != nil {
+			return upstream(fmt.Sprintf("insert link[%d]", i), err)
+		}
+	}
+	return nil
+}
+
+// ExistingSources returns the (source_path → source_commit) map for
+// every document whose Source.Repo + Source.Path fall under basePath
+// on the given repo. The scanner diffs this against the remote file
+// list to compute the new/changed/deleted sets each pass.
+func (d *Docs) ExistingSources(ctx context.Context, repo, basePath string) (map[string]string, error) {
+	rows, err := d.pool.Query(ctx,
+		`SELECT source_path, source_commit
+		   FROM documents
+		  WHERE source_repo = $1
+		    AND source_path LIKE $2`,
+		repo, basePath+"%")
+	if err != nil {
+		return nil, upstream("list sources", err)
+	}
+	defer rows.Close()
+
+	out := make(map[string]string, 16)
+	for rows.Next() {
+		var path, sha string
+		if err := rows.Scan(&path, &sha); err != nil {
+			return nil, upstream("scan source", err)
+		}
+		out[path] = sha
+	}
+	if err := rows.Err(); err != nil {
+		return nil, upstream("rows sources", err)
+	}
+	return out, nil
+}
+
+// Delete removes a document and its cascade (authors, links,
+// discussions). Used by the scanner's tombstone path when a source
+// file disappears (IMPL-0003 RD4 — hard delete, no tombstones).
+func (d *Docs) Delete(ctx context.Context, id domain.DocumentID) error {
+	cmd, err := d.pool.Exec(ctx, `DELETE FROM documents WHERE id = $1`, string(id))
+	if err != nil {
+		return upstream("delete document", err)
+	}
+	if cmd.RowsAffected() == 0 {
+		return fmt.Errorf("%w: %s", domain.ErrNotFound, id)
+	}
+	return nil
+}
+
+func nonZeroTime(t time.Time) time.Time {
+	if t.IsZero() {
+		return time.Now().UTC()
+	}
+	return t
 }
 
 // getDocument fetches the single documents row. Returns

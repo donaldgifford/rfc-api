@@ -10,6 +10,8 @@ import (
 	"github.com/donaldgifford/rfc-api/internal/config"
 	"github.com/donaldgifford/rfc-api/internal/domain/registry"
 	"github.com/donaldgifford/rfc-api/internal/obs"
+	"github.com/donaldgifford/rfc-api/internal/parser"
+	_ "github.com/donaldgifford/rfc-api/internal/parser/doczmarkdown" // register docz-markdown
 	"github.com/donaldgifford/rfc-api/internal/store/postgres"
 	"github.com/donaldgifford/rfc-api/internal/worker"
 )
@@ -67,6 +69,8 @@ func runWork(ctx context.Context, logger *slog.Logger, args []string) error {
 		Config:         cfg.Worker,
 		Registry:       reg,
 		Pool:           pool,
+		Store:          postgres.NewDocs(pool),
+		Parsers:        parser.Default,
 		TracerProvider: tp.Provider(),
 		Metrics:        obs.NewMetrics(),
 		Logger:         logger,
