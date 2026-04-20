@@ -542,19 +542,19 @@ what Phase 2 proves.
 
 **Service layer**
 
-- [ ] `internal/service/docs.go`: `Docs` struct with `Get`,
+- [x] `internal/service/docs.go`: `Docs` struct with `Get`,
       `ListByType`, `ListAll`, `Links`, `Discussion`, `Authors`,
       `Revisions` (stub). Takes a `store.Docs` interface.
-- [ ] `internal/service/search.go`: `Search.Query` delegating to
+- [x] `internal/service/search.go`: `Search.Query` delegating to
       a `search.Client` interface. No-op impl for v1.
-- [ ] `internal/store/memory/memory.go`: in-memory
+- [x] `internal/store/memory/memory.go`: in-memory
       implementation of `store.Docs` seeded from **JSON files
       under `testdata/`** (one file per document, shape matching
       the API wire format so the same files double as expected-
       response fixtures in integration tests). Tagged
       `//go:build !release` or equivalent so it does not bloat
       prod builds.
-- [ ] `internal/store/memory/postgres_probe.go`: placeholder
+- [x] `internal/store/memory/postgres_probe.go`: placeholder
       probe implementation — a `ReadinessProbe` that always
       returns nil in Phase 2 (real Postgres probe lands with the
       real store in a later IMPL). Registered in
