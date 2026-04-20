@@ -8,7 +8,7 @@ import (
 	"testing"
 )
 
-// TestNoOsGetenvOutsideConfig enforces DESIGN-0001 §Configuration: no
+// TestNoOsGetenvOutsideConfig enforces DESIGN-0001 #Configuration: no
 // os.Getenv calls anywhere in the tree except internal/config/.
 //
 // The rule keeps the config surface discoverable: one package knows the

@@ -187,7 +187,7 @@ Webhook:
   POST /api/v1/webhooks/github            GitHub webhook receiver (signed)
 ```
 
-Conventions (full treatment in [DESIGN-0002 §URL structure][design-0002-url]):
+Conventions (full treatment in [DESIGN-0002 #URL structure][design-0002-url]):
 
 - `{type}` is a lowercase registered type id (`rfc`, `adr`, `framework`).
   Unknown types 404 at the router.
@@ -235,7 +235,7 @@ binary with two sub-commands or as two binaries is a design-doc-level choice.
 ### Sync
 
 Ingest follows a three-path reconciliation model, modeled on Oxide's (see
-[INV-0001 §Sync model][inv-0001]):
+[INV-0001 #Sync model][inv-0001]):
 
 1. **Webhook** — low-latency path. The API's `POST /api/v1/webhooks/github`
    endpoint verifies the GitHub HMAC signature, identifies affected documents by
@@ -340,13 +340,13 @@ to the IdP on every request.
    re-indexing) is long-running and bursty; keeping it out of the read-serving
    process gives independent restarts, no request-latency impact during reindex,
    and a natural unit to scale horizontally as the corpus grows. Oxide reached
-   the same conclusion ([INV-0001][inv-0001] §rfd-processor).
+   the same conclusion ([INV-0001][inv-0001] #rfd-processor).
 6. **Read PR discussions from GitHub on the request path** (frontend or API
    calls Octokit per-view). Rejected. That approach leaves discussions invisible
    to the MCP server and to other non-browser consumers, and ties read latency
    to GitHub API health and rate limits. Worker-persisted discussions solve
    both. This is a deliberate departure from the Oxide RFD design, where
-   `rfd-site` fetches PR comments directly ([INV-0001][inv-0001] §PR
+   `rfd-site` fetches PR comments directly ([INV-0001][inv-0001] #PR
    discussions).
 
 ## Implementation Phases
@@ -421,7 +421,7 @@ browser is owned by `rfc-site` ([RFC-0002][rfc-0002]).
   (`rfc-api serve`, `rfc-api work`). Simplifies the container image and Helm
   chart; split into two binaries only if worker-specific dependencies start
   bloating the API image or if independent scaling becomes awkward. Resolved in
-  [DESIGN-0001][design-0001] §Resolved Decisions.
+  [DESIGN-0001][design-0001] #Resolved Decisions.
 
 ## Success Criteria
 
@@ -453,7 +453,7 @@ browser is owned by `rfc-site` ([RFC-0002][rfc-0002]).
   types][design-0002]
 - Oxide's [rfd-site][rfd-site] and [`rfd-site`][rfd-repo] — architectural
   reference; implementation is not borrowed.
-- [RFD 1, §Tooling][rfd-tooling] — framing for the read experience, search, and
+- [RFD 1, #Tooling][rfd-tooling] — framing for the read experience, search, and
   inter-document linking.
 
 [rfc-0002]: ./0002-rfc-site-web-frontend-for-the-markdown-portal.md

@@ -6,7 +6,7 @@
 //
 // Handlers read route metadata from routectx.From — never from
 // r.Pattern — so the type id and matched pattern have a single
-// source of truth (DESIGN-0001 §Handler pattern).
+// source of truth (DESIGN-0001 #Handler pattern).
 package handler
 
 import (

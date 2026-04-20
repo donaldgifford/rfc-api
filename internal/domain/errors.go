@@ -13,7 +13,7 @@ import "errors"
 // failure mode is one callers need to branch on.
 //
 // Unknown failures (returning anything that doesn't match these)
-// surface as 500 at the HTTP layer; see DESIGN-0001 §Error handling.
+// surface as 500 at the HTTP layer; see DESIGN-0001 #Error handling.
 var (
 	// ErrNotFound is returned when a requested resource does not exist.
 	// Maps to HTTP 404.

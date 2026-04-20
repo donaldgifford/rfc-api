@@ -136,10 +136,10 @@ host-run binary only needs to reach the collector on `localhost:4317`.
 
 ## References
 
-- [IMPL-0001 §Prerequisites](./impl/0001-rfc-api-http-server-phase-1-implementation.md)
+- [IMPL-0001 #Prerequisites](./impl/0001-rfc-api-http-server-phase-1-implementation.md)
   — the source of truth for the stack shape.
-- [DESIGN-0001 §Configuration](./design/0001-rfc-api-http-server-go-net-http-structure.md#configuration)
+- [DESIGN-0001 #Configuration](./design/0001-rfc-api-http-server-go-net-http-structure.md#configuration)
   — env-var naming rule and full config surface.
-- [DESIGN-0001 §Observability hooks](./design/0001-rfc-api-http-server-go-net-http-structure.md#observability-hooks)
+- [DESIGN-0001 #Observability hooks](./design/0001-rfc-api-http-server-go-net-http-structure.md#observability-hooks)
   — signal story (logs → stdout → Alloy, metrics → Prometheus,
   traces → OTel → Jaeger).

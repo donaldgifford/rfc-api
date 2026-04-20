@@ -1,7 +1,7 @@
 // Package config loads rfc-api runtime configuration from four sources in
 // increasing precedence: built-in defaults, an optional YAML file, env
 // vars, and CLI flags. Env-var naming follows the rule in DESIGN-0001
-// §Configuration: service-prefixed (RFC_API_*) for config we define,
+// #Configuration: service-prefixed (RFC_API_*) for config we define,
 // upstream-standard names (DATABASE_URL, MEILI_MASTER_KEY,
 // OTEL_EXPORTER_OTLP_ENDPOINT) for variables defined by external deps.
 //
@@ -224,7 +224,7 @@ func loadEnv(cfg *Config) {
 
 	setDuration(&cfg.ShutdownTimeout, "RFC_API_SHUTDOWN_TIMEOUT")
 
-	// -- upstream-standard names (see DESIGN-0001 §Configuration) --
+	// -- upstream-standard names (see DESIGN-0001 #Configuration) --
 	setString(&cfg.Database.URL, "DATABASE_URL")
 	setString(&cfg.Meili.MasterKey, "MEILI_MASTER_KEY")
 	setString(&cfg.OTel.OTLPEndpoint, "OTEL_EXPORTER_OTLP_ENDPOINT")

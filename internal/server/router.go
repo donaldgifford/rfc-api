@@ -35,7 +35,7 @@ type V1Chain struct {
 }
 
 // BuildMainHandler assembles the main-port handler tree per
-// DESIGN-0001 §Route registration. Cross-type aggregation endpoints
+// DESIGN-0001 #Route registration. Cross-type aggregation endpoints
 // (/types, /docs, /search) live on the v1 sub-mux alongside the
 // per-type surface, which is mounted once per registered
 // DocumentType.
@@ -113,7 +113,7 @@ func BuildMainHandler(
 // withRoute captures typeID and pattern at registration time and
 // stashes them on r.Context() before calling handler. Route labels
 // (metrics, logs, spans) read from the same key so one mechanism
-// carries everything end-to-end (DESIGN-0001 §Handler pattern).
+// carries everything end-to-end (DESIGN-0001 #Handler pattern).
 //
 // After the mux has dispatched, the closure also renames the active
 // OTel server span to "METHOD <pattern>" (matching the Prometheus

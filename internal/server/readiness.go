@@ -3,7 +3,7 @@
 // registration, handler glue, and shared primitives (readiness
 // probes, health handlers) they both depend on.
 //
-// See DESIGN-0001 §Server construction + §Middleware chain + §API
+// See DESIGN-0001 #Server construction + #Middleware chain + #API
 // surface for the overall shape.
 package server
 

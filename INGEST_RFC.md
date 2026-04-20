@@ -40,7 +40,7 @@ frontend + API backed by Git as the source of truth. Their site is
 AsciiDoc-specific and tightly coupled to their design system; ours will use
 Markdown and be usable for more than just RFCs.
 
-The tooling Oxide describes in [RFD 1 §Tooling][rfd-tooling] is a good reference
+The tooling Oxide describes in [RFD 1 #Tooling][rfd-tooling] is a good reference
 for the kind of surface we're building — the web reading experience, the search,
 the inter-document links. We want that experience, against our conventions, with
 an API and MCP layer added for programmatic and agentic use.
@@ -270,7 +270,7 @@ phase is informed by usage of the current one.
 - Oxide's [RFD site][rfd-site] and [`rfd-site`][rfd-repo] / `rfd-api` repos.
   Architectural shape (viewer + API + Git-as-source-of-truth) is directly
   borrowed; implementation is not.
-- [RFD 1][rfd-1], particularly §Tooling, for how the read experience, search,
+- [RFD 1][rfd-1], particularly #Tooling, for how the read experience, search,
   and inter-document linking are framed.
 - Rust RFC process, Go proposal process, Joyent RFDs — general RFC lineage,
   mostly informational.

@@ -22,7 +22,7 @@ const contentType = "application/json"
 
 // PageInfo carries the pagination metadata for a list response. Used
 // by ArrayJSON to set X-Total-Count and Link headers per DESIGN-0001
-// §API surface. NextCursor empty = last page; PrevCursor empty when
+// #API surface. NextCursor empty = last page; PrevCursor empty when
 // no previous page is known (e.g. first request).
 type PageInfo struct {
 	Total      int

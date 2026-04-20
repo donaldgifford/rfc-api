@@ -28,7 +28,7 @@ type ListQuery struct {
 }
 
 // Cursor is the decoded pagination cursor. Documents are sorted
-// (CreatedAt DESC, ID ASC) per DESIGN-0001 §API surface; the cursor
+// (CreatedAt DESC, ID ASC) per DESIGN-0001 #API surface; the cursor
 // captures the last row on the previous page so the store can
 // continue from the right position without offsets.
 type Cursor struct {

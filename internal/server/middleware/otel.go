@@ -9,7 +9,7 @@ import (
 
 // OTel returns a Middleware that wraps the inner handler with
 // otelhttp instrumentation. Outermost on both the main and admin
-// chains per DESIGN-0001 §Middleware chain.
+// chains per DESIGN-0001 #Middleware chain.
 //
 // Span names at creation time are a placeholder ("rfc-api:<method>");
 // the per-route closure (Phase 2 withRoute) renames the span to

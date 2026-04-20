@@ -3,7 +3,7 @@
 // handler and from catch-all middlewares so error shape is uniform
 // across the API.
 //
-// See DESIGN-0001 §Error handling for the mapping table and
+// See DESIGN-0001 #Error handling for the mapping table and
 // RFC 7807 for the response shape.
 package httperr
 

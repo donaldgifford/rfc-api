@@ -75,7 +75,7 @@ the subject of separate design docs.
 - Make handlers unit-testable with `httptest.NewRecorder`, and the
   full server integration-testable via `httptest.NewServer`.
 - Share the same Go module with the sync worker
-  ([RFC-0001 §Service composition][rfc-0001-services]) and ship as
+  ([RFC-0001 #Service composition][rfc-0001-services]) and ship as
   sub-commands of one binary.
 
 ### Non-Goals
@@ -117,7 +117,7 @@ work predates Go 1.22:
 - Route "groups" are a convention: build a sub-`ServeMux`, mount it
   at a prefix with `StripPrefix`, and wrap it in a middleware
   chain. A thin helper makes this ergonomic (see
-  [§Route registration](#route-registration)).
+  [#Route registration](#route-registration)).
 
 ## Detailed Design
 
@@ -173,7 +173,7 @@ rfc-api/
 ├── pkg/                         // only for code we want consumed externally;
 │                                 // empty for v1
 ├── api/
-│   └── openapi.yaml             // hand-authored contract (see §OpenAPI)
+│   └── openapi.yaml             // hand-authored contract (see #OpenAPI)
 ├── Makefile
 └── go.mod
 ```
@@ -499,7 +499,7 @@ new sub-mux (`/api/v2`) with a documented deprecation window.
 
 Handlers read **route metadata from the request context**, never from
 `r.Pattern`. The registration closure (`withRoute`, see
-[§Route registration](#route-registration)) stashes both the type id
+[#Route registration](#route-registration)) stashes both the type id
 and the matched pattern on the context at registration time. Handlers,
 the structured logger, the metrics middleware, and the OTel span
 namer all read from that same context key. One mechanism, one place
@@ -527,7 +527,7 @@ Notes:
 - The `type` segment is injected at registration, not re-derived at
   request time. Because we string-concatenate the type into the route
   during registration (see
-  [§Route registration](#route-registration)), one handler function
+  [#Route registration](#route-registration)), one handler function
   serves every type, and the closure carries the type through
   context.
 - `docid.Canonical("rfc", "0001")` returns `"RFC-0001"`. Pure
@@ -535,7 +535,7 @@ Notes:
 - `service.Docs.Get(ctx, "RFC-0001")` is type-agnostic; the store
   looks up by the single-string composite id and returns the
   document with its `Type` field populated from the row. See
-  [DESIGN-0002 §Identifier format][design-0002-id].
+  [DESIGN-0002 #Identifier format][design-0002-id].
 - The cross-type `/api/v1/docs` handler (`h.Docs.ListAll`) does
   not receive a type parameter; it paginates across all documents
   regardless of type, optionally narrowed by `?type=`.
@@ -712,7 +712,7 @@ They serve different roles and we don't pick one over the other:
   using `prometheus/client_golang`. Labels: `method`, `route`,
   `status`. **Route label is sourced from the closure-captured
   pattern on request context** (see
-  [§Handler pattern](#handler-pattern)), not from the raw `path`
+  [#Handler pattern](#handler-pattern)), not from the raw `path`
   or `r.Pattern` — same mechanism that carries the type id, so
   cardinality is bounded by the registered route set, never
   blown up by `{id}` values.
@@ -755,7 +755,7 @@ v1 approach: **hand-author `api/openapi.yaml`** and validate it
 against handler behaviour in tests. Rationale:
 
 - Oxide auto-generates OpenAPI from Dropshot
-  ([INV-0001 §rfd-api][inv-0001-rfd-api]); Go `net/http` has no
+  ([INV-0001 #rfd-api][inv-0001-rfd-api]); Go `net/http` has no
   equivalent emitter convention.
 - Generating from Go structs (swag, go-swagger) adds a codegen
   step that is awkward to keep clean under Uber-style lint, and
@@ -790,8 +790,8 @@ For the HTTP server, that means:
 - The route shape is `/api/v1/{type}/{id}` per type (mounted from
   the registry at startup) plus `/api/v1/docs` and
   `/api/v1/search` for cross-type aggregation. See
-  [§Route registration](#route-registration) for the concrete
-  loop and [DESIGN-0002 §URL structure][design-0002-url] for the
+  [#Route registration](#route-registration) for the concrete
+  loop and [DESIGN-0002 #URL structure][design-0002-url] for the
   rationale.
 - Adding a new type means adding a `document_types` entry in
   config (and a parser if it needs a new one). The router loop
@@ -811,7 +811,7 @@ For the HTTP server, that means:
   The registry's jobs are config validation at startup, driving
   the route-mount loop, populating `/api/v1/types`, and parser
   dispatch in the worker. See
-  [DESIGN-0002 §Identifier format][design-0002-id].
+  [DESIGN-0002 #Identifier format][design-0002-id].
 
 The OpenAPI spec (`api/openapi.yaml`) follows the same shape: per-
 type paths are expanded from a template or generated from the
@@ -826,10 +826,10 @@ implementation.
 ## API / Interface Changes
 
 No public API surface exists yet; this design defines it from zero.
-The route set below matches [RFC-0001 §API surface][rfc-0001-api]
+The route set below matches [RFC-0001 #API surface][rfc-0001-api]
 and is consistent with
-[DESIGN-0002 §URL structure][design-0002-url]. Routes are split
-across two servers per [§Server construction](#server-construction):
+[DESIGN-0002 #URL structure][design-0002-url]. Routes are split
+across two servers per [#Server construction](#server-construction):
 
 **Admin server (`RFC_API_ADMIN_LISTEN`, default `127.0.0.1:8081`):**
 
@@ -887,8 +887,8 @@ Notation:
   handler.
 - `{id}` is the numeric URL form (`0001`); canonical display
   form (`RFC-0001`) is reconstructed in the handler. See
-  [§Handler pattern](#handler-pattern) and
-  [DESIGN-0002 §Identifier format][design-0002-id].
+  [#Handler pattern](#handler-pattern) and
+  [DESIGN-0002 #Identifier format][design-0002-id].
 
 **Query parameters on list endpoints** (`/api/v1/docs` and
 `/api/v1/{type}`):
@@ -904,7 +904,7 @@ Notation:
 **List response shape:**
 
 - Bare JSON array of documents (see
-  [§Resolved Decisions](#resolved-decisions) #3).
+  [#Resolved Decisions](#resolved-decisions) #3).
 - Pagination metadata in `Link` (RFC 8288; `rel="next"`,
   `rel="prev"`) and `X-Total-Count` headers.
 - Each document includes its `type` field so cross-type result
@@ -992,7 +992,7 @@ progression from [RFC-0001][rfc-0001]:
    `GET /api/v1/docs` and `GET /api/v1/rfc/{id}` return seeded
    data. Full handler test coverage including the "fake type"
    registration test from
-   [DESIGN-0002 §Testing Strategy][design-0002-testing].
+   [DESIGN-0002 #Testing Strategy][design-0002-testing].
 3. Wire the real Postgres store behind `service.Docs` (separate
    design doc, separate PR). The HTTP tier should not change as a
    result — proof that the layering holds.
@@ -1011,7 +1011,7 @@ rationale is not lost:
 1. **Prometheus and OpenTelemetry — both, for v1.** Prometheus
    scrape for metrics, OTel for tracing, both wired from day one
    with trace-ID / log correlation. See
-   [§Observability hooks](#observability-hooks). Metrics transport
+   [#Observability hooks](#observability-hooks). Metrics transport
    can move to OTLP push later without handler changes because
    emission goes through `internal/obs/`.
 2. **Rate-limit backing store — per-pod in-memory for v1,
@@ -1081,11 +1081,11 @@ rationale is not lost:
     names for external deps.** `RFC_API_*` for our config;
     `DATABASE_URL` / `MEILI_MASTER_KEY` / `OTEL_EXPORTER_OTLP_ENDPOINT`
     unchanged because those names are defined by the upstream
-    system. See [§Configuration](#configuration).
+    system. See [#Configuration](#configuration).
 14. **Cross-type listing sort — `(created DESC, id ASC)` with
     opaque cursor.** `created` is immutable so pagination is
     stable under concurrent edits. Cursor is base64 JSON,
-    opaque to clients. See [§API surface](#api--interface-changes).
+    opaque to clients. See [#API surface](#api--interface-changes).
 
 ## References and canonical sources
 
@@ -1106,7 +1106,7 @@ should actually have open.
 - [DESIGN-0002: DocumentType extensibility for multiple content types][design-0002]
   — sibling design doc; full treatment of the type-extensibility
   rule summarized in
-  [§Extensibility](#extensibility-multiple-document-types).
+  [#Extensibility](#extensibility-multiple-document-types).
 - [INV-0001: Oxide RFD system — architecture case study][inv-0001]
 
 ### Authoritative writing on Go HTTP APIs
@@ -1145,7 +1145,7 @@ reaching for third-party alternatives.
   domain-level logging.
 - [`net/http/httptest`](https://pkg.go.dev/net/http/httptest) —
   stdlib request/response recorder and in-process test server.
-  All three test tiers in [§Testing Strategy](#testing-strategy)
+  All three test tiers in [#Testing Strategy](#testing-strategy)
   use it.
 - [`golang.org/x/time/rate`](https://pkg.go.dev/golang.org/x/time/rate)
   — official token-bucket rate limiter. What the rate-limit
@@ -1153,7 +1153,7 @@ reaching for third-party alternatives.
 - [`otelhttp`](https://pkg.go.dev/go.opentelemetry.io/contrib/instrumentation/net/http/otelhttp)
   — official OpenTelemetry HTTP instrumentation. Wraps an
   `http.Handler` directly; see
-  [§Observability hooks](#observability-hooks).
+  [#Observability hooks](#observability-hooks).
 - [`promhttp`](https://pkg.go.dev/github.com/prometheus/client_golang/prometheus/promhttp)
   — official Prometheus HTTP handler. Mounted at `/metrics`.
 
@@ -1166,11 +1166,11 @@ each solves one problem.
   middleware. The common choice for stdlib services.
 - [`github.com/go-playground/validator`](https://github.com/go-playground/validator)
   — struct-tag request validation. Used by the binding helper
-  referenced in [§Handler pattern](#handler-pattern).
+  referenced in [#Handler pattern](#handler-pattern).
 - [`github.com/justinas/alice`](https://github.com/justinas/alice)
   — tiny (~50 LOC) middleware-chain helper. Alternative to the
   project-owned `Chain` helper shown in
-  [§Middleware chain](#middleware-chain); pick one, do not ship
+  [#Middleware chain](#middleware-chain); pick one, do not ship
   both.
 
 ### Patterns with no library (hand-written in this codebase)
@@ -1182,7 +1182,7 @@ Small enough that pulling a dependency is not justified. Each is
   into 500s through `httperr`.
 - **Request ID** — uses `crypto/rand` or derives from the OTel
   trace ID when present. See
-  [§Middleware chain](#middleware-chain) step 3.
+  [#Middleware chain](#middleware-chain) step 3.
 - **Access logger** — wraps the `ResponseWriter` to capture status
   and bytes written; emits one `slog` record per request.
 - **Timeout** — `context.WithTimeout` on `r.Context()` plus a
@@ -1190,13 +1190,13 @@ Small enough that pulling a dependency is not justified. Each is
 - **GitHub webhook HMAC verify** — `crypto/hmac` +
   `crypto/subtle.ConstantTimeCompare` against
   `X-Hub-Signature-256`. See
-  [§Route registration](#route-registration).
+  [#Route registration](#route-registration).
 
 ### External standards
 
 - [RFC 7807 — Problem Details for HTTP APIs](https://datatracker.ietf.org/doc/html/rfc7807)
   — the response shape used by `httperr`. See
-  [§Error handling](#error-handling).
+  [#Error handling](#error-handling).
 
 [rfc-0001]: ../rfc/0001-rfc-api-backend-api-for-the-markdown-portal.md
 [rfc-0001-api]: ../rfc/0001-rfc-api-backend-api-for-the-markdown-portal.md#api-surface-indicative

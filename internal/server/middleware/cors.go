@@ -8,7 +8,7 @@ import (
 )
 
 // CORSConfig bundles the small CORS surface the API needs. Per
-// DESIGN-0001 §Middleware chain CORS is default-deny; origins must
+// DESIGN-0001 #Middleware chain CORS is default-deny; origins must
 // be explicitly allow-listed. v1 goals stay narrow: GET + OPTIONS
 // only, no credentialed requests, no exposed response headers. That
 // keeps the browser contract small while rfc-site + MCP are the only

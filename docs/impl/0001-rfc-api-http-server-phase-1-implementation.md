@@ -47,7 +47,7 @@ with `ServeMux` routing and middleware chain, handler set, RFC 7807 error
 envelope, metrics and tracing wiring, and a testable lifecycle.
 
 The end state of this IMPL is a single-replica HTTP server with in-memory
-storage that serves every endpoint in the DESIGN's §API surface table,
+storage that serves every endpoint in the DESIGN's #API surface table,
 is fully unit- and integration-tested, and produces the log / metric /
 trace signals DESIGN-0001 commits to — ready for the real Postgres store
 (separate design doc) to be slotted in behind `service.Docs` without any
@@ -71,7 +71,7 @@ handler change.
 - `internal/service/docs.go` — use-case layer, storage interface,
   in-memory implementation for Phase 2 testing.
 - `internal/config/` — env + file + flag precedence, `RFC_API_*` surface
-  from [DESIGN-0001 §Configuration][design-0001-config].
+  from [DESIGN-0001 #Configuration][design-0001-config].
 - `internal/obs/` — metrics and tracing abstractions; `promhttp`
   `/metrics` endpoint; `otelhttp` wrap as outermost middleware.
 - `api/openapi.yaml` — hand-authored contract for every endpoint.
@@ -91,7 +91,7 @@ handler change.
 - Sync worker internals. `rfc-api work` registers, parses flags, logs
   "not yet implemented," and exits 0 — a deliberate placeholder.
 - Real OIDC auth. Auth middleware is a no-op pass-through in v1
-  (DESIGN-0001 §Middleware chain step 8); Phase 4 of RFC-0001 replaces
+  (DESIGN-0001 #Middleware chain step 8); Phase 4 of RFC-0001 replaces
   it.
 - `rfc-site` frontend ([RFC-0002][rfc-0002]).
 - Perf work (rate-limit under load, concurrent-read benchmarks).
@@ -139,7 +139,7 @@ env var.
 
 | Service     | Image                                | Host port | Role                                                              |
 |-------------|--------------------------------------|-----------|-------------------------------------------------------------------|
-| `keycloak`  | `quay.io/keycloak/keycloak:26`       | 8180      | Dev OIDC provider (RFC-0001 §Technology choices). Realm seeded from `deploy/dev/keycloak/rfc-api-realm.json`. |
+| `keycloak`  | `quay.io/keycloak/keycloak:26`       | 8180      | Dev OIDC provider (RFC-0001 #Technology choices). Realm seeded from `deploy/dev/keycloak/rfc-api-realm.json`. |
 
 **Profile `tracing`:**
 
@@ -177,7 +177,7 @@ dev tools. All services use named volumes for state so
 - [x] `.env.example` at repo root seeded with dev values that
       target the compose stack. Service-prefixed for config we
       own; upstream-standard names for external deps (see
-      DESIGN-0001 §Configuration):
+      DESIGN-0001 #Configuration):
       `RFC_API_LISTEN=:8080`,
       `RFC_API_ADMIN_LISTEN=127.0.0.1:8081`,
       `RFC_API_PPROF_ENABLED=true`,
@@ -201,7 +201,7 @@ dev tools. All services use named volumes for state so
     (request rate, p50/p95/p99 latency, error rate, in-flight).
   - `alloy/config.alloy` — tail compose container logs into
     Loki with labels that mirror the span/log correlation
-    story in DESIGN-0001 §Observability hooks.
+    story in DESIGN-0001 #Observability hooks.
 - [x] `Makefile` additions (preserve existing Uber-style target
       conventions):
   - `make compose-up` — default profile only (Postgres + Meilisearch).
@@ -306,7 +306,7 @@ in RFC-0001 can be pointed at without further changes to `main`,
 **Config**
 
 - [x] `internal/config/config.go`: `Server` and `Admin` structs
-      covering every key in DESIGN-0001 §Configuration —
+      covering every key in DESIGN-0001 #Configuration —
       service-prefixed (`RFC_API_LISTEN`, `RFC_API_ADMIN_LISTEN`,
       `RFC_API_PPROF_ENABLED`, `RFC_API_LOG_LEVEL`,
       `RFC_API_RATE_LIMIT_RPS`, `RFC_API_RATE_LIMIT_BURST`,
@@ -438,7 +438,7 @@ in RFC-0001 can be pointed at without further changes to `main`,
 
 - [x] `internal/server/httperr/httperr.go`: `Write(w, r, err)`
       maps domain sentinels → status + problem+json body per
-      DESIGN-0001 §Error handling table. Uses `errors.Is` so
+      DESIGN-0001 #Error handling table. Uses `errors.Is` so
       wrapped errors classify by root cause.
 - [x] `internal/domain/errors.go`: sentinel errors (`ErrNotFound`,
       `ErrInvalidInput`, `ErrConflict`, `ErrUpstream`).
@@ -579,7 +579,7 @@ what Phase 2 proves.
       `cursor`, forwards to `service.Search`.
 - [x] `handler/types.go`: `List` — renders the registered
       `DocumentType` entries as the array shape documented in
-      DESIGN-0001 §API surface. Pure registry read, no DB, no
+      DESIGN-0001 #API surface. Pure registry read, no DB, no
       cache.
 - [x] `handler/webhook.go`: `GitHub` — reads the raw body (after
       HMAC middleware has verified it), decodes, enqueues to
@@ -590,13 +590,13 @@ what Phase 2 proves.
       `type` known-registry membership. Invalid input maps to
       `ErrInvalidInput`.
 - [x] Pagination: cursor tuple `{created, id}` implements the
-      `(created DESC, id ASC)` sort from DESIGN-0001 §API
+      `(created DESC, id ASC)` sort from DESIGN-0001 #API
       surface. Cursor is opaque base64 JSON to clients.
 
 **Routing**
 
 - [x] `internal/server/router.go`: `buildMainHandler(...)` loop
-      per DESIGN-0001 §Route registration. Per-type paths are
+      per DESIGN-0001 #Route registration. Per-type paths are
       string-concatenated, not wildcard-routed. Cross-type
       `/api/v1/docs`, `/api/v1/search`, `/api/v1/types` are fixed.
 - [x] `withRoute(typeID, pattern, handler)` closure at
@@ -652,7 +652,7 @@ what Phase 2 proves.
 
 #### Success Criteria
 
-- Every endpoint in DESIGN-0001 §API surface returns the
+- Every endpoint in DESIGN-0001 #API surface returns the
   documented status code and body shape against seeded data.
 - Adding a second type to the registry's config (e.g. `adr`)
   mounts `/api/v1/adr`, `/api/v1/adr/{id}`, and all sub-routes
@@ -819,7 +819,7 @@ phase tasks above.
 
 ## Testing Plan
 
-Mirrors DESIGN-0001 §Testing Strategy, phased with implementation:
+Mirrors DESIGN-0001 #Testing Strategy, phased with implementation:
 
 - **Phase 1**
   - Unit tests for middleware (recover, request-id, logger).
@@ -862,7 +862,7 @@ External to this IMPL:
   a hard dependency before Phase 3 of RFC-0001 (real cluster
   deploy).
 - **Auth ADR.** Auth middleware is a stub in v1; a dedicated
-  ADR (currently folded into RFC-0001 §Technology choices)
+  ADR (currently folded into RFC-0001 #Technology choices)
   should precede Phase 4.
 
 Toolchain (already pinned in `mise.toml`):
@@ -962,7 +962,7 @@ which they were answered.
     `RFC_API_RATE_LIMIT_RPS`, `RFC_API_WEBHOOK_SECRET` are
     ours. `DATABASE_URL`, `MEILI_MASTER_KEY`,
     `OTEL_EXPORTER_OTLP_ENDPOINT` are upstream-defined and
-    pass through unchanged. DESIGN-0001 §Configuration
+    pass through unchanged. DESIGN-0001 #Configuration
     updated to state the rule.
 17. **Keycloak realm seeded via JSON import.** Mount
     `deploy/dev/keycloak/rfc-api-realm.json` under
@@ -978,7 +978,7 @@ which they were answered.
     work regardless of OTLP exporter state. Different concern
     from traces, so a different mechanism is justified.
 20. **One starter Grafana dashboard, panels per the list in
-    §Prerequisites.** Request rate, latency quantiles, errors,
+    #Prerequisites.** Request rate, latency quantiles, errors,
     in-flight, logs panel, trace explorer link. Serves as the
     concrete Phase-3 metrics target.
 21. **`compose.yaml` (v2 canonical name).** Compose Spec
@@ -991,8 +991,8 @@ which they were answered.
     classes (pprof through ingress, scrape punching rate-limit,
     probe through auth) by construction. Makefile `pprof-*`
     targets provide a simple local-debug path. DESIGN-0001
-    §Server construction, §Middleware chain, §API surface,
-    §Configuration all updated.
+    #Server construction, #Middleware chain, #API surface,
+    #Configuration all updated.
 23. **No formal load-testing deliverable in IMPL-0001.**
     Phase 3's 60-minute soak with pprof sampling covers
     "anything obviously leaks" for v1. Add a perf suite only

@@ -7,7 +7,7 @@
 //	rfc-api version print version and commit
 //	rfc-api help    show usage
 //
-// Exit codes (see DESIGN-0001 §Server lifecycle):
+// Exit codes (see DESIGN-0001 #Server lifecycle):
 //
 //	0  graceful shutdown or successful command completion
 //	1  startup failure (listen error, unknown subcommand, parse error)
@@ -120,7 +120,7 @@ Commands:
 
 Configuration is via env vars (RFC_API_* and upstream-standard names
 like DATABASE_URL / MEILI_MASTER_KEY / OTEL_EXPORTER_OTLP_ENDPOINT)
-and flags; see docs/design/0001-*.md §Configuration for the full
+and flags; see docs/design/0001-*.md #Configuration for the full
 surface.
 `
 	fmt.Print(usage)

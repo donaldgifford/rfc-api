@@ -16,7 +16,7 @@ type Types struct {
 func NewTypes(r domain.DocumentTypeRegistry) *Types { return &Types{registry: r} }
 
 // typeDTO is the wire shape for /api/v1/types responses, per
-// DESIGN-0001 §API / Interface Changes.
+// DESIGN-0001 #API / Interface Changes.
 type typeDTO struct {
 	ID            string   `json:"id"`
 	DisplayPrefix string   `json:"display_prefix"`

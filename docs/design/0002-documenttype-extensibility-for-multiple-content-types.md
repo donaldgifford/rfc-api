@@ -55,8 +55,8 @@ startup — alongside a small cross-type aggregation surface
 The doc is published early, before any implementation, so the shape
 can evolve in step with the first-pass build. Sections flagged as
 open are expected to change; the principles in
-[§Package and naming rule](#package-and-naming-rule) and
-[§URL structure](#url-structure) are load-bearing and
+[#Package and naming rule](#package-and-naming-rule) and
+[#URL structure](#url-structure) are load-bearing and
 should not drift without a follow-up.
 
 ## Goals and Non-Goals
@@ -154,7 +154,7 @@ type DocumentType struct {
     Prefix string
 
     // Which content source backs this type, and where within it.
-    // Exact shape deferred; see §Sources and types are independent.
+    // Exact shape deferred; see #Sources and types are independent.
     Source SourceRef
 
     // The lifecycle states valid for this type, in rough order
@@ -324,7 +324,7 @@ Conventions:
   component in v1). Case sensitivity is trivially a non-issue for
   numeric strings.
 - All list endpoints — `/docs` and `/{type}` — are paginated
-  (see [§Pagination](#pagination)).
+  (see [#Pagination](#pagination)).
 
 Why this shape:
 
@@ -351,7 +351,7 @@ the registry and mounts the per-type endpoints under
 `/api/v1/{type}/*` for every registered `DocumentType`. Adding a
 new type = a config entry + (possibly) a new parser; no handler or
 router code changes. Implementation lives in
-[DESIGN-0001 §Route registration][design-0001-routing].
+[DESIGN-0001 #Route registration][design-0001-routing].
 
 ### Identifier format
 
@@ -396,7 +396,7 @@ dispatch. The registry's jobs are:
 ### Pagination
 
 All list endpoints (`/api/v1/docs`, `/api/v1/{type}`, and future
-list-shaped endpoints) are paginated. Per DESIGN-0001 §Resolved
+list-shaped endpoints) are paginated. Per DESIGN-0001 #Resolved
 Decisions, list responses are bare JSON arrays with pagination
 metadata in headers:
 
@@ -511,8 +511,8 @@ the `DocumentType` parameter:
 
 The API is **per-type URL prefixes plus a cross-type aggregation
 surface**, registry-driven. The full endpoint set is defined in
-[RFC-0001 §API surface][rfc-0001-api] and
-[DESIGN-0001 §API / Interface Changes][design-0001-api]; this doc
+[RFC-0001 #API surface][rfc-0001-api] and
+[DESIGN-0001 #API / Interface Changes][design-0001-api]; this doc
 owns the rules those endpoints must obey:
 
 - `GET /api/v1/{type}` and `GET /api/v1/{type}/{id}` are mounted
@@ -520,7 +520,7 @@ owns the rules those endpoints must obey:
   config entry; no route-code change.
 - `GET /api/v1/docs` and `GET /api/v1/search` stay as cross-type
   aggregation endpoints. Both accept `?type=` for narrowing. Both
-  are paginated (see [§Pagination](#pagination)).
+  are paginated (see [#Pagination](#pagination)).
 - `GET /api/v1/types` returns the registered `DocumentType` set
   (route segment id, display prefix, title, statuses) rendered
   from the registry at request time.
@@ -557,7 +557,7 @@ design must honor:
   enum that would have to grow every time we add a type).
 - **Identifier prefix uniqueness is enforced at registry load.**
   Two types sharing a prefix is a config error and refuses to
-  start the service. See [§Open Questions](#open-questions).
+  start the service. See [#Open Questions](#open-questions).
 
 ## Testing Strategy
 
@@ -631,7 +631,7 @@ Still open; expected to evolve with implementation:
   uniqueness is enforced at registry startup; two types sharing a
   prefix is a config error and refuses to start the service. (Was
   "default for v1, revisit if it comes up.") See
-  [§Data Model](#data-model).
+  [#Data Model](#data-model).
 - **Per-type rate limits and auth scopes → single scope for v1.**
   All types share one rate limit and a single `docs:read` scope
   per DESIGN-0001 Phase 4. If a future type requires a distinct
@@ -645,13 +645,13 @@ Still open; expected to evolve with implementation:
   aggregation preserved.** `/api/v1/{type}/{id}` is the primary
   surface, alongside `/api/v1/docs` and `/api/v1/search` for
   cross-type queries. See
-  [§URL structure](#url-structure). (Was a reserved future
+  [#URL structure](#url-structure). (Was a reserved future
   option; promoted to the day-one design in review.)
 
 ## References
 
 - [RFC-0001: rfc-api — Backend API for the Markdown Portal][rfc-0001]
-  — parent RFC; §Scope and §Content model commit to multi-type
+  — parent RFC; #Scope and #Content model commit to multi-type
   support.
 - [RFC-0002: rfc-site — Web Frontend for the Markdown Portal][rfc-0002]
   — consumer of per-type metadata; owns type-specific rendering.

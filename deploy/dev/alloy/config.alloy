@@ -3,7 +3,7 @@
 // Tails compose container stdout/stderr via the Docker API, parses JSON
 // log lines (rfc-api emits slog JSON with OTel logs semconv keys), and
 // pushes to Loki. Labels mirror the span/log correlation story from
-// DESIGN-0001 §Observability hooks so Loki queries can join to
+// DESIGN-0001 #Observability hooks so Loki queries can join to
 // Prometheus / Jaeger by service + trace_id.
 
 // Discover running containers through the mounted docker.sock.

@@ -9,7 +9,7 @@ import (
 )
 
 // MaxListLimit is the hard cap on list-endpoint page size per
-// DESIGN-0001 §API surface. A client-requested larger limit collapses
+// DESIGN-0001 #API surface. A client-requested larger limit collapses
 // to this; a zero or negative value is rejected as invalid input.
 const MaxListLimit = 200
 

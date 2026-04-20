@@ -1,5 +1,5 @@
 // Package docid holds the pure conversion helpers between the two
-// document-id forms defined in DESIGN-0002 §Identifier format:
+// document-id forms defined in DESIGN-0002 #Identifier format:
 //
 //   - URL id: numeric only, zero-padded — e.g. "0001"
 //   - Canonical display id: uppercase prefix + "-" + URL id — e.g.

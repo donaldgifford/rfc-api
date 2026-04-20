@@ -190,7 +190,7 @@ Key properties:
 ### Auth integration
 
 - **IdP:** Keycloak in dev/test; Okta in production. Same IdP that backs
-  `rfc-api`'s bearer-token validation (per RFC-0001 §Technology choices).
+  `rfc-api`'s bearer-token validation (per RFC-0001 #Technology choices).
 - **Flow:** OIDC authorization-code with PKCE against the IdP. `rfc-site` acts
   as the confidential client. On successful login it stores the session
   server-side (signed cookie referencing a server-held session store or a JWT —
@@ -242,7 +242,7 @@ Key properties:
 
 ### Relationship to other components
 
-See [RFC-0001 §Relationship to other components][rfc-0001] for the full diagram.
+See [RFC-0001 #Relationship to other components][rfc-0001] for the full diagram.
 `rfc-site`'s slice:
 
 ```mermaid

@@ -67,14 +67,14 @@ The repo has a full architecture doc set in place before any Go code exists. Tre
 
 - `docs/rfc/0001-*` — `rfc-api` backend scope. Two cooperating processes (API + sync worker) over Postgres. Commits to PR-discussion persistence (departs from Oxide's model), OIDC/OAuth2 resource-server auth (Keycloak dev, Okta prod), Kubernetes deploy. Parent is RFC-0011 in repo-root `INGEST_RFC.md`.
 - `docs/rfc/0002-*` — `rfc-site` frontend. Server-side Markdown rendering; API serves raw Markdown, never HTML.
-- `docs/adr/0001-*` — Go 1.26.1 + stdlib `net/http` (Go 1.22+ `ServeMux` patterns). No HTTP framework. An earlier draft selected Echo v5 and was reversed before any code — rationale in the ADR's §Alternatives.
+- `docs/adr/0001-*` — Go 1.26.1 + stdlib `net/http` (Go 1.22+ `ServeMux` patterns). No HTTP framework. An earlier draft selected Echo v5 and was reversed before any code — rationale in the ADR's #Alternatives.
 - `docs/adr/0002-*` — PostgreSQL as datastore.
 - `docs/adr/0003-*` — Meilisearch for search, behind the API (not direct-from-frontend).
 - `docs/design/0001-*` — HTTP server structure. Module layout, middleware chain (outermost `otelhttp` → recover → request-id → slog logger → timeout → CORS → rate-limit → auth), RFC 7807 error envelope, single-binary with `serve`/`work` sub-commands.
 - `docs/design/0002-*` — `DocumentType` extensibility. **Load-bearing rule:** *type is a parameter, not a package name.* No `internal/rfc/`, no `GetRFC()`, no `rfc_*` columns. Handlers, services, storage, and search take `DocumentType` (or the canonical display id) as input. URL shape is `/api/v1/{type}/{id}` mounted from a registry loop at startup, plus cross-type `/api/v1/docs` and `/api/v1/search`. `{id}` is numeric in URLs; canonical display id is `RFC-0001` (prefix + dash + zero-padded number).
 - `docs/investigation/0001-*` — Oxide RFD architecture case study informing the above.
 
-Before proposing architectural changes or writing code, check the relevant doc's §Open Questions and §Resolved Decisions to see what's still in play vs. firm. When a decision changes, update the doc in the same change as the code — these docs are meant to evolve with the implementation, not freeze once accepted.
+Before proposing architectural changes or writing code, check the relevant doc's #Open Questions and #Resolved Decisions to see what's still in play vs. firm. When a decision changes, update the doc in the same change as the code — these docs are meant to evolve with the implementation, not freeze once accepted.
 
 ## CI / release architecture
 

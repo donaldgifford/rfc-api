@@ -40,7 +40,7 @@ release tooling. It should not introduce a new language or runtime to
 the platform.
 
 The HTTP surface is small — about eight endpoints in v1 per
-[RFC-0001 §API surface][rfc-0001-api]. All responses are JSON. The
+[RFC-0001 #API surface][rfc-0001-api]. All responses are JSON. The
 middleware set we need is well-bounded: recover, request id, logging,
 tracing, timeout, CORS, rate limiting, and (in a later phase) auth.
 
