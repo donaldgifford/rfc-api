@@ -1,10 +1,10 @@
 package middleware
 
 import (
-	"errors"
 	"fmt"
 	"net"
 	"net/http"
+	"strconv"
 	"strings"
 	"sync"
 	"time"
@@ -64,8 +64,10 @@ func RateLimit(cfg RateLimitConfig) Middleware {
 			limiter := l.forKey(key)
 			reservation := limiter.Reserve()
 			if !reservation.OK() {
-				// Bucket exhausted beyond burst; reject.
-				httperr.Write(w, r, fmt.Errorf("%w: rate limit exceeded", domain.ErrInvalidInput))
+				// Bucket size smaller than request burst (should not
+				// happen with validated config); reject as 429 for
+				// uniformity with the delay path.
+				httperr.Write(w, r, fmt.Errorf("%w: reservation exceeds burst", domain.ErrRateLimited))
 				return
 			}
 			if delay := reservation.Delay(); delay > 0 {
@@ -74,8 +76,8 @@ func RateLimit(cfg RateLimitConfig) Middleware {
 				if retry < 1 {
 					retry = 1
 				}
-				w.Header().Set("Retry-After", fmt.Sprintf("%d", retry))
-				httperr.Write(w, r, errors.New("rate limit exceeded"))
+				w.Header().Set("Retry-After", strconv.Itoa(retry))
+				httperr.Write(w, r, domain.ErrRateLimited)
 				return
 			}
 			next.ServeHTTP(w, r)

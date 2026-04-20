@@ -31,11 +31,14 @@ func TestRateLimit_RejectsBeyondBurst(t *testing.T) {
 	}
 	rec := httptest.NewRecorder()
 	h.ServeHTTP(rec, httptest.NewRequestWithContext(t.Context(), "GET", "/x", http.NoBody))
-	if rec.Code == 200 {
-		t.Errorf("want non-200 after burst exhausted, got %d", rec.Code)
+	if rec.Code != http.StatusTooManyRequests {
+		t.Errorf("status = %d, want 429", rec.Code)
 	}
 	if rec.Header().Get("Retry-After") == "" {
 		t.Errorf("Retry-After missing")
+	}
+	if ct := rec.Header().Get("Content-Type"); ct != "application/problem+json" {
+		t.Errorf("Content-Type = %q, want application/problem+json", ct)
 	}
 }
 

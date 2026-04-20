@@ -38,4 +38,9 @@ var (
 	// failure; Phase 4 extends this to OIDC JWT verification. Maps to
 	// HTTP 401.
 	ErrUnauthenticated = errors.New("unauthenticated")
+
+	// ErrRateLimited is returned when a client has exceeded its
+	// token-bucket budget. Maps to HTTP 429; the rate-limit
+	// middleware sets a Retry-After header alongside the envelope.
+	ErrRateLimited = errors.New("rate limit exceeded")
 )

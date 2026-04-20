@@ -330,6 +330,15 @@ components:
       content:
         application/problem+json:
           schema: { $ref: "#/components/schemas/Problem" }
+    ProblemRateLimited:
+      description: Rate-limit exceeded. Retry-After header indicates seconds.
+      headers:
+        Retry-After:
+          description: Seconds until the client may retry.
+          schema: { type: integer, format: int32 }
+      content:
+        application/problem+json:
+          schema: { $ref: "#/components/schemas/Problem" }
 
   schemas:
     Problem:

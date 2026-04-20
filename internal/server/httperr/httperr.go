@@ -57,6 +57,8 @@ func classify(err error) classification {
 		return classification{http.StatusBadGateway, "/problems/upstream", "Upstream failure"}
 	case errors.Is(err, domain.ErrUnauthenticated):
 		return classification{http.StatusUnauthorized, "/problems/unauthenticated", "Unauthenticated"}
+	case errors.Is(err, domain.ErrRateLimited):
+		return classification{http.StatusTooManyRequests, "/problems/rate-limited", "Rate limit exceeded"}
 	default:
 		return classification{http.StatusInternalServerError, "/problems/internal", "Internal error"}
 	}

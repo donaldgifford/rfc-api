@@ -208,8 +208,11 @@ func TestIntegration_RateLimit_Rejects(t *testing.T) {
 	if r1.StatusCode != 200 || r2.StatusCode != 200 {
 		t.Fatalf("burst requests: %d, %d", r1.StatusCode, r2.StatusCode)
 	}
-	if r3.StatusCode == 200 {
-		t.Errorf("third request should be limited, got 200")
+	if r3.StatusCode != http.StatusTooManyRequests {
+		t.Errorf("third request: status = %d, want 429", r3.StatusCode)
+	}
+	if r3.Header.Get("Retry-After") == "" {
+		t.Error("third request missing Retry-After header")
 	}
 }
 
