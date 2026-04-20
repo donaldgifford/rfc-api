@@ -1,17 +1,19 @@
 ---
 id: IMPL-0001
 title: "rfc-api HTTP server phase 1 implementation"
-status: Draft
+status: Completed
 author: Donald Gifford
 created: 2026-04-19
+completed: 2026-04-20
 ---
 <!-- markdownlint-disable-file MD025 MD041 -->
 
 # IMPL 0001: rfc-api HTTP server phase 1 implementation
 
-**Status:** Draft
+**Status:** Completed
 **Author:** Donald Gifford
 **Date:** 2026-04-19
+**Completed:** 2026-04-20
 
 <!--toc:start-->
 - [Objective](#objective)

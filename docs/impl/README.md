@@ -32,5 +32,5 @@ docz create impl "Your Implementation Title"
 
 | ID | Title | Status | Date | Author | Link |
 |----|-------|--------|------|--------|------|
-| IMPL-0001 | rfc-api HTTP server phase 1 implementation | Draft | 2026-04-19 | Donald Gifford | [0001-rfc-api-http-server-phase-1-implementation.md](0001-rfc-api-http-server-phase-1-implementation.md) |
+| IMPL-0001 | rfc-api HTTP server phase 1 implementation | Completed | 2026-04-19 | Donald Gifford | [0001-rfc-api-http-server-phase-1-implementation.md](0001-rfc-api-http-server-phase-1-implementation.md) |
 <!-- END DOCZ AUTO-GENERATED -->
