@@ -89,7 +89,7 @@ jobs:
         id: meta
         uses: docker/metadata-action@v5
         with:
-          images: ghcr.io/donaldgifford/
+          images: ghcr.io/donaldgifford/rfc-api
           tags: |
             type=semver,pattern={{version}},value=${{ needs.bump-version.outputs.tag }}
             type=semver,pattern={{major}}.{{minor}},value=${{ needs.bump-version.outputs.tag }}
@@ -107,3 +107,4 @@ jobs:
           set: |-
             *.cache-from=type=gha
             *.cache-to=type=gha,mode=max
+            *.output=type=registry

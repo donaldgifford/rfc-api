@@ -63,3 +63,14 @@ target "local" {
   platforms = ["linux/amd64"]
   tags      = ["${IMAGE_NAME}:local"]
 }
+
+// Release target used by .github/workflows/release.yml. Tags and labels
+// are overlaid from docker/metadata-action's bake-file outputs (target
+// name `docker-metadata-action`), so the `tags` block here is empty on
+// purpose — the meta action wins.
+target "docker-metadata-action" {}
+
+target "release" {
+  inherits  = ["_common", "docker-metadata-action"]
+  platforms = ["linux/amd64", "linux/arm64"]
+}
