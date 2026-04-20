@@ -182,18 +182,24 @@ service connection-aware.
 
 #### Tasks
 
-- [ ] Use `github.com/jackc/pgx/v5` native API ([RD2](#resolved-decisions));
-      pure Go, no CGO.
-- [ ] `internal/store/postgres/pool.go`: `NewPool(ctx, cfg)` using
+- [x] Use `github.com/jackc/pgx/v5` native API ([RD2](#resolved-decisions));
+      pure Go, no CGO. *Added pgx v5.9.2 and pgxpool.*
+- [x] `internal/store/postgres/pool.go`: `NewPool(ctx, cfg)` using
       `pgxpool.New`. Honor `DATABASE_URL` (already in `config.Config`). Pool
       tuning per RD3: `MaxConns = 25`, `MinConns = 5`, `MaxConnIdleTime = 5m`,
-      `HealthCheckPeriod = 30s`.
-- [ ] `cmd/rfc-api/serve.go`: open the pool after config load, before server
+      `HealthCheckPeriod = 30s`. *Constants defined in `pool.go`; integration
+      test verifies `NewPool` + `Ping` + `SELECT 1` round-trip.*
+- [x] `cmd/rfc-api/serve.go`: open the pool after config load, before server
       construction; `pool.Close()` in the defer chain under the shutdown
-      context.
-- [ ] Log the driver version, pool settings, and server version on first
+      context. *Pool opens before registry/service construction so a bad
+      `DATABASE_URL` fails fast at startup.*
+- [x] Log the driver version, pool settings, and server version on first
       successful connection (operator-visible, one line, INFO).
-- [ ] Pool exposes a `Ping(ctx)` for the readiness probe (see Phase 4).
+      *NewPool emits one INFO line: `"postgres pool ready"` with `server_version`,
+      `max_conns`, `min_conns`, `max_conn_idle_time`, `health_check_period`.*
+- [x] Pool exposes a `Ping(ctx)` for the readiness probe (see Phase 4).
+      *`*pgxpool.Pool.Ping` is the native method; the real probe lands in
+      Phase 4.*
 
 #### Success Criteria
 
