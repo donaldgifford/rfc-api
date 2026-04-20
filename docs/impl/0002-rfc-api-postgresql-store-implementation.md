@@ -101,8 +101,11 @@ ships, changes become migrations rather than rewrites.
 
 #### Tasks
 
-- [ ] Add `golang-migrate` to `mise.toml` (decided in
+- [x] Add `golang-migrate` to `mise.toml` (decided in
       [#Resolved Decisions](#resolved-decisions) RD1).
+      *Installed via `github:golang-migrate/migrate@v4.18.1` with
+      the postgres driver precompiled. `mise exec -- migrate --version`
+      prints `4.18.1`.*
 - [ ] Create `db/migrations/` with forward-only `.sql` files numbered
       `0001_init.sql`, `0002_*.sql`, …
 - [ ] Schema v1:
