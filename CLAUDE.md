@@ -4,9 +4,16 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## Project state
 
-Early-stage skeleton. `cmd/rfc-api/main.go` is an empty `package main` stub and there is **no `go.mod` yet**. CI (`.github/workflows/ci.yml`) calls `actions/setup-go` with `go-version-file: go.mod`, so any Go work likely begins with `go mod init github.com/donaldgifford/rfc-api`. Module path is `github.com/donaldgifford/rfc-api` (see `GO_PACKAGE` in `Makefile`).
+Phase 1–3 of [IMPL-0001][impl-0001] are complete. The HTTP server boots end-to-end:
 
-Despite the empty source tree, the repo is heavily pre-wired with tooling, CI, lint, release, and documentation infrastructure — edits here are usually to that tooling, not application code.
+- `cmd/rfc-api/` — `serve` + `work` subcommands under a small dispatcher; `version` / `help`; signal-rooted ctx; errgroup lifecycle for both servers.
+- `internal/server/` — main + admin servers, registry-driven `/api/v1/{type}/*` router with cross-type `/docs` / `/search` / `/types`, full middleware chain (OTel → recover → request-id → logger → metrics on root; timeout → CORS → rate-limit → auth-stub on v1), RFC 7807 problem+json error envelope, per-route GitHub webhook with HMAC verification.
+- `internal/domain/` — framework-agnostic `Document`, `DocumentType`, registry (prefix + id uniqueness enforced at load), `docid` pure helpers.
+- `internal/service/` + `internal/store/memory/` — service layer + in-memory store (JSON seed). `internal/search` ships a `NoopClient` for v1; Meilisearch lands later.
+- `internal/obs/` — OTel TracerProvider (OTLP/gRPC when `OTEL_EXPORTER_OTLP_ENDPOINT` is set, no-op otherwise), Prometheus registry + HTTP collectors.
+- `api/openapi.yaml` — hand-authored OAS 3.1. `test/contract/` validates every handler against it via `kin-openapi` on every CI run.
+
+[impl-0001]: ./docs/impl/0001-rfc-api-http-server-phase-1-implementation.md
 
 ## Local development
 
@@ -29,6 +36,10 @@ All workflows go through the `Makefile`. Run `make help` for the full list.
 - `make license-check` — allowed licenses: Apache-2.0, MIT, BSD-2-Clause, BSD-3-Clause, ISC, MPL-2.0.
 - `make release-local` — `goreleaser --snapshot --clean --skip=publish --skip=sign`.
 - `make release TAG=vX.Y.Z` — tags and pushes; the `release.yml` workflow does the rest.
+- `make smoke` — CLI smoke tests (help / version / unknown / serve / work).
+- `make smoke-soak` — synthetic-traffic soak with goroutine-leak check; default `SOAK_DURATION=120` s, set `SOAK_DURATION=3600` for the 60-minute IMPL-0001 target.
+- `make compose-up` / `compose-up-auth` / `compose-up-obs` / `compose-up-full` — bring up dev dep profiles.
+- `make pprof-cpu` / `pprof-heap` / `pprof-goroutine` / `pprof-allocs` / `pprof-trace` — grab pprof against the admin port (set `ADMIN_URL=` to override).
 
 Note: `make run` builds and runs the binary (`$(BIN_DIR)/$(PROJECT_NAME)`). `make run-local` does the same thing via a separate target — the two are effectively aliases at this point; consolidate later if the distinction is never used.
 
@@ -67,7 +78,9 @@ Before proposing architectural changes or writing code, check the relevant doc's
 
 ## CI / release architecture
 
-- `.github/workflows/ci.yml` — lint, test (with Codecov), govulncheck + Trivy, goreleaser `build --snapshot`, and **docker bake** (`docker-bake.hcl`, target `ci`) with GHA cache. Note: `docker-bake.hcl` is referenced but not present in the repo root — it will need to be added before the `docker-build` job will pass.
+- `.github/workflows/ci.yml` — lint, test (with Codecov), govulncheck + Trivy, goreleaser `build --snapshot`, and **docker bake** (`docker-bake.hcl`, target `ci`) with GHA cache.
+- `docker-bake.hcl` — `ci` target cross-builds `linux/amd64` + `linux/arm64`; `local` target single-arch dev image. `VERSION` / `COMMIT` / `REGISTRY` / `IMAGE_NAME` / `IMAGE_TAG` variables; `make release-local` smoke uses `docker buildx bake local --load`.
+- `Dockerfile` — multi-stage `golang:1.26.1-alpine` builder → `gcr.io/distroless/static:nonroot` runtime. Build cache mounts, `-trimpath -ldflags -s -w` with `main.version` / `main.commit` injected from bake vars. Never built via compose.
 - `.github/workflows/release.yml` — tag-triggered goreleaser release.
 - `.github/workflows/pr-labels.yml` + `.github/labeler.yml` — branch-prefix auto-labeling (`feat/`, `fix/`, `chore/`, `docs/`, `bug/`). When creating branches, use those prefixes so the label automation works.
 - `scripts/labels.sh` — one-time GitHub label bootstrap.
@@ -77,3 +90,10 @@ Before proposing architectural changes or writing code, check the relevant doc's
 - **Uber Go style** via `.golangci.yml` (errcheck, errorlint, gocyclo, gocognit, funlen, prealloc, etc.) — see the file for the full enabled list before adding code that might trip it.
 - `goimports -local github.com/donaldgifford` grouping is enforced by `make fmt`.
 - Version info is injected via ldflags at build — wire any new `main` packages the same way.
+- **`net/http` import is confined to `cmd/rfc-api/` and `internal/server/`.** Domain, service, store, and search packages return framework-agnostic types; the HTTP seam translates them.
+- **Route metadata flows through `internal/server/routectx`**, not `r.Pattern`. Any middleware that needs the matched pattern after dispatch installs a `*routectx.Capture` (see `middleware/metrics.go`) rather than reading `r.Pattern`.
+- **`os.Getenv` only in `internal/config/`** — enforced by a test (`internal/config/lint_test.go`). New config surfaces go through `Config` + `loadEnv`.
+- **Type is a parameter, not a package name.** No `internal/rfc/`, no `Docs.GetRFC()`, no `rfc_*` columns. Handlers take `DocumentType` / canonical id via `routectx` + `docid.Canonical`.
+- **List endpoints return bare JSON arrays** with pagination in headers (`X-Total-Count`, RFC 8288 `Link`). Never `null` — `render.ArrayJSON` normalizes nil slices to `[]`.
+- **Errors flow through domain sentinels → `httperr.Write`.** Handlers never encode errors directly; every 4xx/5xx is `application/problem+json` (RFC 7807).
+- **Any change to `api/openapi.yaml` must keep `test/contract/` green.** The spec and handlers are validated against each other in-process on every CI run.
