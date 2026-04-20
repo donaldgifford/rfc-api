@@ -13,12 +13,13 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 - `internal/obs/` — OTel TracerProvider (OTLP/gRPC when `OTEL_EXPORTER_OTLP_ENDPOINT` is set, no-op otherwise), Prometheus registry + HTTP collectors.
 - `api/openapi.yaml` — hand-authored OAS 3.1. `test/contract/` validates every handler against it via `kin-openapi` on every CI run.
 
-[IMPL-0002][impl-0002] is **in progress**. Phases 1–3 complete:
+[IMPL-0002][impl-0002] is **in progress**. Phases 1–4 complete:
 
-- `db/migrations/` — forward-only SQL; `db/embed.go` bundles them into the binary.
+- `db/migrations/` — forward-only SQL; `db/embed.go` bundles them into the binary. `db.NewMigrator(dsn)` is shared by `rfc-api migrate` and the integration-test `TestMain`.
 - `cmd/rfc-api/migrate.go` — `rfc-api migrate` subcommand (golang-migrate + `iofs`).
-- `internal/store/postgres/` — pgx/v5 pool (`pool.go`) and `store.Docs` implementation (`docs.go`) with keyset pagination on `(created_at DESC, id ASC)`. Integration tests behind `//go:build integration`.
-- Pool wired in `serve` before registry construction so a bad `DATABASE_URL` fails fast. Readiness probe + store swap-in land in Phases 4–5.
+- `internal/store/postgres/` — pgx/v5 pool (`pool.go`), `store.Docs` implementation (`docs.go`) with keyset pagination on `(created_at DESC, id ASC)`, and `Probe{Pool}` for `/readyz` (`probe.go`).
+- `serve.go` wires the real probe into the `/readyz` chain; the `memory.PostgresProbe` placeholder is gone.
+- Integration tests: store-level at `internal/store/postgres/*_test.go`, server-level at `test/integration/postgres/`. Both gated `//go:build integration` and driven by `DATABASE_URL`. `make test-integration` runs them; CI `integration` job exercises on every push via a postgres:18-alpine service. Store swap-in lands in Phase 5.
 
 [impl-0001]: ./docs/impl/0001-rfc-api-http-server-phase-1-implementation.md
 [impl-0002]: ./docs/impl/0002-rfc-api-postgresql-store-implementation.md

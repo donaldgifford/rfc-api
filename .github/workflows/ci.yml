@@ -138,6 +138,40 @@ jobs:
       - name: Migrate up again (verify re-forward)
         run: go run ./cmd/rfc-api migrate
 
+  integration:
+    name: Integration Tests
+    runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgres:18-alpine
+        env:
+          POSTGRES_USER: rfcapi
+          POSTGRES_PASSWORD: rfcapi
+          POSTGRES_DB: rfcapi
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U rfcapi"
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+    env:
+      DATABASE_URL: postgres://rfcapi:rfcapi@localhost:5432/rfcapi?sslmode=disable
+      RFC_API_WEBHOOK_SECRET: ci-only
+      MEILI_MASTER_KEY: ci-only
+    steps:
+      - uses: actions/checkout@v6
+
+      - name: Set up Go
+        uses: actions/setup-go@v6
+        with:
+          go-version-file: go.mod
+
+      # The integration suite's TestMain runs migrations itself, so no
+      # separate migrate step is required.
+      - name: Run integration tests
+        run: make test-integration
+
   build:
     name: Build
     runs-on: ubuntu-latest

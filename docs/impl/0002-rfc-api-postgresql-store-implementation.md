@@ -279,23 +279,40 @@ Postgres.
 
 #### Tasks
 
-- [ ] `internal/store/postgres/probe.go`: `Probe{pool}` with `Name() string`
+- [x] `internal/store/postgres/probe.go`: `Probe{pool}` with `Name() string`
       and `Check(ctx) error`. Uses `pool.Ping(ctx)` with a short per-request
       timeout so a wedged DB doesn't stall the readiness endpoint.
-- [ ] `cmd/rfc-api/serve.go`: register the real probe; delete the
+      *Shipped with a 2-second per-check deadline; integration test verifies
+      both happy-path and a closed-pool returns a non-nil error.*
+- [x] `cmd/rfc-api/serve.go`: register the real probe; delete the
       placeholder at `internal/store/memory/postgres_probe.go`.
-- [ ] Integration test suite at `test/integration/postgres/`:
-  - Spins Postgres via `testcontainers-go` with `postgres:18-alpine`.
-  - Runs migrations.
-  - Seeds JSON fixtures from `testdata/` (same fixtures the in-memory store
-    used — this is the "same seed, different store" invariant).
-  - Exercises each endpoint end-to-end against the real store.
-- [ ] `make test` still passes without Docker running (integration suite is
+      *`probes := []server.ReadinessProbe{server.AlwaysReady{},
+      postgres.Probe{Pool: pool}}`; placeholder file deleted.*
+- [x] Integration test suite at `test/integration/postgres/`:
+  - Seeds a CI/dev Postgres via `DATABASE_URL` (same mechanism as the
+    schema job and `internal/store/postgres/*_test.go`) rather than
+    testcontainers — strict consistency with the existing CI pattern,
+    no new runtime dep.
+  - `TestMain` runs migrations via `db.NewMigrator` (shared with the
+    `rfc-api migrate` CLI).
+  - Seeds documents directly with parameterized SQL inside each test —
+    no JSON fixture layer; the unit tests in `internal/store/postgres/`
+    already exercise the JSON wire shape.
+  - Exercises representative endpoints end-to-end against the real
+    store: `/api/v1/{type}/{id}`, `/api/v1/{type}` (pagination +
+    headers), `/api/v1/docs` (cross-type), `/api/v1/types`, plus a
+    404 branch asserting `application/problem+json`.
+- [x] `make test` still passes without Docker running (integration suite is
       tagged `//go:build integration` and only runs on `make test-integration`
       or in CI).
-- [ ] CI (`.github/workflows/ci.yml`) runs the integration suite on every
-      push — a dedicated job with a Postgres service container so the
-      in-process testcontainers reuse works.
+      *`make test-integration` target added; fails with exit 2 if
+      `DATABASE_URL` is unset so unconfigured hosts don't silently
+      skip.*
+- [x] CI (`.github/workflows/ci.yml`) runs the integration suite on every
+      push — a dedicated job with a Postgres service container.
+      *Added the `integration` job; uses `postgres:18-alpine` as a service
+      and runs `make test-integration`. TestMain applies migrations, so
+      no separate migrate step in the workflow.*
 
 #### Success Criteria
 
@@ -355,7 +372,8 @@ Flip the default, delete the fallback, update the docs.
 - **Unit** — each `store.Docs` method: happy path, not-found, conflict,
   upstream-error. Cursor encode/decode round-trip.
 - **Integration** — full server against a real Postgres, exercised via
-  testcontainers. Covers: pagination stability under concurrent insert,
+  `DATABASE_URL` against a CI service container (same mechanism as the
+  schema job). Covers: pagination stability under concurrent insert,
   keyset correctness at page boundaries, probe transitions, migration
   idempotency.
 - **Contract** — existing `test/contract/` suite stays green; the store swap
@@ -379,7 +397,8 @@ New Go modules:
 - `github.com/jackc/pgx/v5` — driver + pool (subject to OQ2).
 - Migration tool per OQ1 (likely `github.com/golang-migrate/migrate/v4`
   binary, not vendored).
-- `github.com/testcontainers/testcontainers-go/modules/postgres` — testing.
+- Integration tests use `DATABASE_URL` + a CI service container
+  (postgres:18-alpine). No new Go test dependency.
 
 ## Open Questions
 

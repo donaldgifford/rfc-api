@@ -5,12 +5,9 @@ import (
 	"errors"
 	"flag"
 	"fmt"
-	"io/fs"
 	"log/slog"
 
 	"github.com/golang-migrate/migrate/v4"
-	_ "github.com/golang-migrate/migrate/v4/database/postgres"
-	"github.com/golang-migrate/migrate/v4/source/iofs"
 
 	"github.com/donaldgifford/rfc-api/db"
 	"github.com/donaldgifford/rfc-api/internal/config"
@@ -36,7 +33,7 @@ func runMigrate(ctx context.Context, logger *slog.Logger, args []string) error {
 		return fmt.Errorf("load config: %w", err)
 	}
 
-	m, err := newMigrator(cfg.Database.URL)
+	m, err := db.NewMigrator(cfg.Database.URL)
 	if err != nil {
 		return fmt.Errorf("construct migrator: %w", err)
 	}
@@ -55,27 +52,6 @@ func runMigrate(ctx context.Context, logger *slog.Logger, args []string) error {
 
 	return nil
 }
-
-// newMigrator builds a Migrate instance using the embedded SQL files
-// as its source and DATABASE_URL as its target. The iofs source is
-// safe for concurrent Up/Down calls — not that we need that, but the
-// cost of using it is zero.
-func newMigrator(databaseURL string) (*migrate.Migrate, error) {
-	source, err := iofs.New(migrationsFS(), "migrations")
-	if err != nil {
-		return nil, fmt.Errorf("open embedded migrations: %w", err)
-	}
-
-	m, err := migrate.NewWithSourceInstance("iofs", source, databaseURL)
-	if err != nil {
-		return nil, fmt.Errorf("open database: %w", err)
-	}
-	return m, nil
-}
-
-// migrationsFS is a narrow wrapper for unit-test substitution. In
-// production it hands back the embed.FS that ships with the binary.
-func migrationsFS() fs.FS { return db.Migrations }
 
 // closeMigrator is a defer-safe shutdown that logs both the source
 // and database close errors. golang-migrate returns two errors so we

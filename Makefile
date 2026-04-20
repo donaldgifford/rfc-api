@@ -73,6 +73,11 @@ test-coverage: ## Run tests with coverage report
 	@ $(MAKE) --no-print-directory log-$@
 	@go test -v -race -coverprofile=$(COVERAGE_OUT) ./...
 
+test-integration: ## Run integration tests (requires DATABASE_URL)
+	@ $(MAKE) --no-print-directory log-$@
+	@test -n "$$DATABASE_URL" || { echo "DATABASE_URL is required for integration tests"; exit 2; }
+	@go test -v -race -tags=integration ./internal/store/postgres/... ./test/integration/...
+
 
 ## Code Quality
 

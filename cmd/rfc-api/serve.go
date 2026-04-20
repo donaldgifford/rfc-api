@@ -82,7 +82,7 @@ func runServe(ctx context.Context, logger *slog.Logger, args []string) error {
 		Webhook: handler.NewWebhook(logger),
 	}
 
-	probes := []server.ReadinessProbe{server.AlwaysReady{}, memory.PostgresProbe{}}
+	probes := []server.ReadinessProbe{server.AlwaysReady{}, postgres.Probe{Pool: pool}}
 	metrics := obs.NewMetrics()
 
 	admin := server.NewAdmin(cfg.Admin, probes, tp.Provider(), metrics, logger)
