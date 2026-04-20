@@ -204,7 +204,7 @@ pprof-trace: ## 5s runtime trace, opens in `go tool trace`
 
 BIN := $(BIN_DIR)/$(PROJECT_NAME)
 
-.PHONY: smoke smoke-help smoke-version smoke-unknown smoke-serve smoke-work
+.PHONY: smoke smoke-help smoke-version smoke-unknown smoke-serve smoke-work smoke-soak
 
 smoke: smoke-help smoke-version smoke-unknown smoke-serve smoke-work ## Run every smoke test
 	@echo "✓ all smoke tests passed"
@@ -246,6 +246,51 @@ smoke-serve: build ## `rfc-api serve` handles SIGTERM cleanly (exit 0)
 		grep -q '"main server stopped"' /tmp/rfc-api.smoke-serve.log || { echo "✗ no 'main server stopped' log"; cat /tmp/rfc-api.smoke-serve.log; exit 1; }; \
 		grep -q '"admin server stopped"' /tmp/rfc-api.smoke-serve.log || { echo "✗ no 'admin server stopped' log"; cat /tmp/rfc-api.smoke-serve.log; exit 1; }; \
 		echo "✓ serve"
+
+## Default soak duration in seconds. IMPL-0001 success criterion is a
+## 60-minute soak; that's run on a schedule, not from PR CI. Override
+## via DURATION=<seconds> for a full run.
+SOAK_DURATION ?= 120
+SOAK_MAIN_PORT ?= 18180
+SOAK_ADMIN_PORT ?= 18181
+
+smoke-soak: build ## Drive synthetic traffic against `rfc-api serve` and assert no goroutine leak
+	@ $(MAKE) --no-print-directory log-$@
+	@set -e; \
+		DATABASE_URL=postgres://x:y@127.0.0.1:5432/z \
+		MEILI_MASTER_KEY=soak \
+		RFC_API_WEBHOOK_SECRET=soak \
+		RFC_API_LISTEN=127.0.0.1:$(SOAK_MAIN_PORT) \
+		RFC_API_ADMIN_LISTEN=127.0.0.1:$(SOAK_ADMIN_PORT) \
+		RFC_API_PPROF_ENABLED=true \
+		$(BIN) serve >/tmp/rfc-api.soak.log 2>&1 & \
+		pid=$$!; \
+		trap 'kill -TERM $$pid 2>/dev/null || true' EXIT; \
+		echo "→ waiting for admin port $(SOAK_ADMIN_PORT)"; \
+		for i in $$(seq 1 30); do \
+			curl -sf http://127.0.0.1:$(SOAK_ADMIN_PORT)/healthz >/dev/null && break || sleep 0.1; \
+		done; \
+		start_gor=$$(curl -sf http://127.0.0.1:$(SOAK_ADMIN_PORT)/metrics | awk '/^go_goroutines /{print $$2}'); \
+		echo "→ starting soak: $(SOAK_DURATION)s, start goroutines=$$start_gor"; \
+		end=$$(( $$(date +%s) + $(SOAK_DURATION) )); \
+		req=0; \
+		while [ $$(date +%s) -lt $$end ]; do \
+			curl -sf -o /dev/null http://127.0.0.1:$(SOAK_MAIN_PORT)/api/v1/types || true; \
+			curl -sf -o /dev/null http://127.0.0.1:$(SOAK_MAIN_PORT)/api/v1/docs || true; \
+			curl -sf -o /dev/null "http://127.0.0.1:$(SOAK_MAIN_PORT)/api/v1/rfc?limit=5" || true; \
+			curl -sf -o /dev/null http://127.0.0.1:$(SOAK_MAIN_PORT)/api/v1/missing/0001 || true; \
+			req=$$((req + 4)); \
+		done; \
+		sleep 2; \
+		end_gor=$$(curl -sf http://127.0.0.1:$(SOAK_ADMIN_PORT)/metrics | awk '/^go_goroutines /{print $$2}'); \
+		echo "→ finished: $$req requests, end goroutines=$$end_gor"; \
+		delta=$$(awk -v a=$$end_gor -v b=$$start_gor 'BEGIN{d=a-b; if(d<0) d=-d; print d}'); \
+		limit=10; \
+		[ $$delta -le $$limit ] || { echo "✗ goroutine leak: delta=$$delta (>$$limit)"; cat /tmp/rfc-api.soak.log | tail -30; exit 1; }; \
+		kill -TERM $$pid; \
+		wait $$pid; rc=$$?; \
+		[ $$rc -eq 0 ] || { echo "✗ expected exit 0, got $$rc"; cat /tmp/rfc-api.soak.log | tail -30; exit 1; }; \
+		echo "✓ soak ($$req requests, goroutine delta=$$delta)"
 
 smoke-work: build ## `rfc-api work` handles SIGTERM cleanly (exit 0)
 	@ $(MAKE) --no-print-directory log-$@
