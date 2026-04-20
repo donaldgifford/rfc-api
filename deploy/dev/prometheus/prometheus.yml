@@ -1,0 +1,31 @@
+---
+# Prometheus scrape config for local dev.
+#
+# Targets:
+#   rfc-api        -> host-run binary's admin port (8081 /metrics)
+#   otel-collector -> its own /metrics endpoint when the tracing profile
+#                     is also up, otherwise this job is dark (no target).
+
+global:
+  scrape_interval: 10s
+  evaluation_interval: 30s
+  external_labels:
+    env: dev
+    service: rfc-api
+
+scrape_configs:
+  - job_name: rfc-api
+    metrics_path: /metrics
+    static_configs:
+      - targets:
+          - host.docker.internal:8081
+        labels:
+          instance: rfc-api-dev
+
+  - job_name: otel-collector
+    metrics_path: /metrics
+    static_configs:
+      - targets:
+          - otel-collector:8888
+        labels:
+          instance: otel-collector-dev

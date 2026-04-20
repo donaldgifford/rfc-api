@@ -1,0 +1,435 @@
+openapi: 3.1.0
+info:
+  title: rfc-api
+  version: 0.1.0
+  description: |
+    Backend API for the Markdown document portal.
+
+
+    rfc-api serves Markdown documents (RFCs, ADRs, and future types) from a
+    content repo. The API is per-type (`/api/v1/{type}/{id}`) with a small
+    cross-type aggregation surface (`/api/v1/docs`, `/api/v1/search`,
+    `/api/v1/types`). Adding a new type is a registry config change — it
+    does not alter this spec's shape.
+
+    See DESIGN-0001 (HTTP server structure) and DESIGN-0002 (DocumentType
+    extensibility) for the rationale behind the per-type prefix + cross-
+    type aggregation split.
+
+servers:
+  - url: "/"
+    description: Same-origin
+
+tags:
+  - name: types
+    description: Document-type registry.
+  - name: docs
+    description: Document read operations (per-type and cross-type).
+  - name: search
+    description: Cross-type full-text search.
+  - name: webhooks
+    description: GitHub webhook receiver.
+  - name: admin
+    description: Admin-port endpoints (separate listener).
+
+paths:
+  /api/v1/types:
+    get:
+      tags: [types]
+      summary: List registered document types.
+      operationId: listTypes
+      responses:
+        "200":
+          description: Registered document types.
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/DocumentType"
+
+  /api/v1/docs:
+    get:
+      tags: [docs]
+      summary: List documents across all types.
+      operationId: listDocs
+      parameters:
+        - $ref: "#/components/parameters/Limit"
+        - $ref: "#/components/parameters/Cursor"
+      responses:
+        "200":
+          $ref: "#/components/responses/DocumentList"
+        "400":
+          $ref: "#/components/responses/ProblemBadRequest"
+
+  /api/v1/search:
+    get:
+      tags: [search]
+      summary: Cross-type full-text search.
+      operationId: searchDocs
+      parameters:
+        - name: q
+          in: query
+          schema: { type: string }
+          description: Free-text query.
+        - name: type
+          in: query
+          schema: { type: string }
+          description: Optional type filter (must match a registered type id).
+        - $ref: "#/components/parameters/Limit"
+        - $ref: "#/components/parameters/Cursor"
+      responses:
+        "200":
+          description: Search hits.
+          headers:
+            X-Total-Count: { $ref: "#/components/headers/XTotalCount" }
+            Link: { $ref: "#/components/headers/Link" }
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/SearchResult"
+        "400":
+          $ref: "#/components/responses/ProblemBadRequest"
+
+  /api/v1/{type}:
+    parameters:
+      - $ref: "#/components/parameters/TypeSegment"
+    get:
+      tags: [docs]
+      summary: List documents of a single type.
+      operationId: listDocsByType
+      parameters:
+        - $ref: "#/components/parameters/Limit"
+        - $ref: "#/components/parameters/Cursor"
+      responses:
+        "200":
+          $ref: "#/components/responses/DocumentList"
+        "400":
+          $ref: "#/components/responses/ProblemBadRequest"
+        "404":
+          $ref: "#/components/responses/ProblemNotFound"
+
+  /api/v1/{type}/{id}:
+    parameters:
+      - $ref: "#/components/parameters/TypeSegment"
+      - $ref: "#/components/parameters/DocID"
+    get:
+      tags: [docs]
+      summary: Fetch a single document.
+      operationId: getDoc
+      responses:
+        "200":
+          description: Document.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Document" }
+        "404":
+          $ref: "#/components/responses/ProblemNotFound"
+
+  /api/v1/{type}/{id}/links:
+    parameters:
+      - $ref: "#/components/parameters/TypeSegment"
+      - $ref: "#/components/parameters/DocID"
+    get:
+      tags: [docs]
+      summary: Cross-references for a document.
+      operationId: getDocLinks
+      responses:
+        "200":
+          description: Incoming + outgoing references.
+          content:
+            application/json:
+              schema:
+                type: array
+                items: { $ref: "#/components/schemas/Link" }
+        "404":
+          $ref: "#/components/responses/ProblemNotFound"
+
+  /api/v1/{type}/{id}/discussion:
+    parameters:
+      - $ref: "#/components/parameters/TypeSegment"
+      - $ref: "#/components/parameters/DocID"
+    get:
+      tags: [docs]
+      summary: PR discussion summary for a document.
+      operationId: getDocDiscussion
+      responses:
+        "200":
+          description: Discussion metadata (may be empty).
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Discussion" }
+        "404":
+          $ref: "#/components/responses/ProblemNotFound"
+
+  /api/v1/{type}/{id}/authors:
+    parameters:
+      - $ref: "#/components/parameters/TypeSegment"
+      - $ref: "#/components/parameters/DocID"
+    get:
+      tags: [docs]
+      summary: Authors of a document.
+      operationId: getDocAuthors
+      responses:
+        "200":
+          description: Authors.
+          content:
+            application/json:
+              schema:
+                type: array
+                items: { $ref: "#/components/schemas/Author" }
+        "404":
+          $ref: "#/components/responses/ProblemNotFound"
+
+  /api/v1/{type}/{id}/revisions:
+    parameters:
+      - $ref: "#/components/parameters/TypeSegment"
+      - $ref: "#/components/parameters/DocID"
+    get:
+      tags: [docs]
+      summary: Revision history for a document (Phase 2 stub).
+      operationId: getDocRevisions
+      responses:
+        "200":
+          description: Revisions.
+          content:
+            application/json:
+              schema:
+                type: array
+                items: { $ref: "#/components/schemas/Revision" }
+        "404":
+          $ref: "#/components/responses/ProblemNotFound"
+
+  /api/v1/webhooks/github:
+    post:
+      tags: [webhooks]
+      summary: GitHub webhook receiver (HMAC-verified).
+      operationId: githubWebhook
+      parameters:
+        - name: X-Hub-Signature-256
+          in: header
+          required: true
+          schema: { type: string }
+        - name: X-GitHub-Event
+          in: header
+          required: true
+          schema: { type: string }
+        - name: X-GitHub-Delivery
+          in: header
+          schema: { type: string }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { type: object, additionalProperties: true }
+      responses:
+        "202":
+          description: Accepted; the worker will pick it up.
+        "400":
+          $ref: "#/components/responses/ProblemBadRequest"
+        "401":
+          description: Signature verification failed.
+          content:
+            application/problem+json:
+              schema: { $ref: "#/components/schemas/Problem" }
+
+  /healthz:
+    get:
+      tags: [admin]
+      summary: Liveness probe (admin port).
+      operationId: healthLive
+      responses:
+        "200": { description: Process is up. }
+
+  /readyz:
+    get:
+      tags: [admin]
+      summary: Readiness probe (admin port).
+      operationId: healthReady
+      responses:
+        "200": { description: All probes reporting healthy. }
+        "503":
+          description: One or more probes failing.
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  status: { type: string, enum: [not_ready] }
+                  failures:
+                    type: array
+                    items:
+                      type: object
+                      properties:
+                        probe: { type: string }
+                        error: { type: string }
+
+  /metrics:
+    get:
+      tags: [admin]
+      summary: Prometheus scrape endpoint (admin port).
+      operationId: metrics
+      responses:
+        "200":
+          description: Prometheus text exposition.
+          content:
+            text/plain: {}
+
+components:
+  parameters:
+    TypeSegment:
+      name: type
+      in: path
+      required: true
+      description: Registered document type id (e.g. "rfc", "adr").
+      schema: { type: string, pattern: "^[a-z][a-z0-9-]*$" }
+    DocID:
+      name: id
+      in: path
+      required: true
+      description: Numeric URL id, zero-padded (e.g. "0001").
+      schema: { type: string, pattern: "^[0-9]+$" }
+    Limit:
+      name: limit
+      in: query
+      schema: { type: integer, minimum: 1, maximum: 200, default: 50 }
+    Cursor:
+      name: cursor
+      in: query
+      description: Opaque pagination cursor from a previous response's Link header.
+      schema: { type: string, maxLength: 256 }
+
+  headers:
+    XTotalCount:
+      description: Total matching documents for the request.
+      schema: { type: integer, format: int64 }
+    Link:
+      description: RFC 8288 Link header with rel="next" / "prev" where applicable.
+      schema: { type: string }
+
+  responses:
+    DocumentList:
+      description: Paginated list of documents.
+      headers:
+        X-Total-Count: { $ref: "#/components/headers/XTotalCount" }
+        Link: { $ref: "#/components/headers/Link" }
+      content:
+        application/json:
+          schema:
+            type: array
+            items: { $ref: "#/components/schemas/Document" }
+    ProblemBadRequest:
+      description: Invalid input.
+      content:
+        application/problem+json:
+          schema: { $ref: "#/components/schemas/Problem" }
+    ProblemNotFound:
+      description: Resource not found.
+      content:
+        application/problem+json:
+          schema: { $ref: "#/components/schemas/Problem" }
+    ProblemRateLimited:
+      description: Rate-limit exceeded. Retry-After header indicates seconds.
+      headers:
+        Retry-After:
+          description: Seconds until the client may retry.
+          schema: { type: integer, format: int32 }
+      content:
+        application/problem+json:
+          schema: { $ref: "#/components/schemas/Problem" }
+
+  schemas:
+    Problem:
+      type: object
+      required: [type, title, status]
+      properties:
+        type: { type: string, format: uri-reference }
+        title: { type: string }
+        status: { type: integer, format: int32 }
+        detail: { type: string }
+        instance: { type: string, format: uri-reference }
+        request_id: { type: string }
+    DocumentType:
+      type: object
+      required: [id, display_prefix, title, statuses]
+      properties:
+        id: { type: string, description: "lowercase route segment" }
+        display_prefix: { type: string, description: "uppercase canonical-id prefix" }
+        title: { type: string }
+        statuses:
+          type: array
+          items: { type: string }
+    Document:
+      type: object
+      required: [id, type, title, status, created_at, updated_at, source]
+      properties:
+        id: { type: string, pattern: "^[A-Z]+-[0-9]+$" }
+        type: { type: string }
+        title: { type: string }
+        status: { type: string }
+        authors:
+          type: array
+          items: { $ref: "#/components/schemas/Author" }
+        created_at: { type: string, format: date-time }
+        updated_at: { type: string, format: date-time }
+        body: { type: string }
+        links:
+          type: array
+          items: { $ref: "#/components/schemas/Link" }
+        labels:
+          type: array
+          items: { type: string }
+        discussion: { $ref: "#/components/schemas/Discussion" }
+        extensions:
+          type: object
+          additionalProperties: true
+        source: { $ref: "#/components/schemas/Source" }
+    Author:
+      type: object
+      required: [name]
+      properties:
+        name: { type: string }
+        email: { type: string, format: email }
+        handle: { type: string }
+    Link:
+      type: object
+      required: [direction, target, href]
+      properties:
+        direction: { type: string, enum: [outgoing, incoming] }
+        target: { type: string }
+        href: { type: string }
+        label: { type: string }
+    Discussion:
+      type: object
+      properties:
+        url: { type: string, format: uri }
+        comment_count: { type: integer }
+        participants:
+          type: array
+          items: { $ref: "#/components/schemas/Author" }
+        last_activity: { type: string, format: date-time }
+    Source:
+      type: object
+      required: [repo, path]
+      properties:
+        repo: { type: string }
+        path: { type: string }
+        commit: { type: string }
+    Revision:
+      type: object
+      required: [commit, created_at, document_id]
+      properties:
+        commit: { type: string }
+        message: { type: string }
+        author: { $ref: "#/components/schemas/Author" }
+        created_at: { type: string, format: date-time }
+        document_id: { type: string }
+    SearchResult:
+      type: object
+      required: [document]
+      properties:
+        document: { $ref: "#/components/schemas/Document" }
+        score: { type: number }
+        snippet: { type: string }

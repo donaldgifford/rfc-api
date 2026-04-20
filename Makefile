@@ -99,13 +99,210 @@ clean: ## Remove build artifacts
 
 ## Application Services
 
-run: ## Run CLI command
+run: build ## Build and run the CLI
 	@ $(MAKE) --no-print-directory log-$@
-	./build/bin/repo-guardian
+	@$(BIN_DIR)/$(PROJECT_NAME)
 
 run-local: build ## Run exporter with local config
 	@ $(MAKE) --no-print-directory log-$@
 	@$(BIN_DIR)/$(PROJECT_NAME)
+
+###############
+##@ Development Dependencies
+
+COMPOSE_ALL_PROFILES := --profile auth --profile tracing --profile metrics --profile logs
+
+.PHONY: compose-up compose-up-auth compose-up-obs compose-up-full
+.PHONY: compose-down compose-nuke compose-logs
+
+compose-up: ## Start default dependencies (postgres + meilisearch)
+	@ $(MAKE) --no-print-directory log-$@
+	@docker compose up -d
+
+compose-up-auth: ## Start default + keycloak (auth profile)
+	@ $(MAKE) --no-print-directory log-$@
+	@docker compose --profile auth up -d
+
+compose-up-obs: ## Start default + tracing + metrics + logs
+	@ $(MAKE) --no-print-directory log-$@
+	@docker compose --profile tracing --profile metrics --profile logs up -d
+
+compose-up-full: ## Start every profile
+	@ $(MAKE) --no-print-directory log-$@
+	@docker compose $(COMPOSE_ALL_PROFILES) up -d
+
+compose-down: ## Stop compose services (keeps volumes)
+	@ $(MAKE) --no-print-directory log-$@
+	@docker compose $(COMPOSE_ALL_PROFILES) down
+
+compose-nuke: ## Stop services and DELETE all volumes (use CONFIRM=1 to skip prompt)
+	@ $(MAKE) --no-print-directory log-$@
+	@if [ "$(CONFIRM)" != "1" ]; then \
+		printf "This will DESTROY all compose volume data. Continue? [y/N] "; \
+		read -r REPLY; \
+		case "$$REPLY" in \
+			[yY]|[yY][eE][sS]) ;; \
+			*) echo "aborted."; exit 1 ;; \
+		esac; \
+	fi
+	@docker compose $(COMPOSE_ALL_PROFILES) down -v
+	@echo "✓ Compose volumes removed"
+
+compose-logs: ## Tail compose logs (usage: make compose-logs SERVICE=postgres; omit SERVICE for all)
+	@ $(MAKE) --no-print-directory log-$@
+	@docker compose logs -f --tail=100 $(SERVICE)
+
+###############
+##@ pprof
+
+ADMIN_URL ?= http://localhost:8081
+PPROF_PATH := $(ADMIN_URL)/debug/pprof
+
+.PHONY: pprof-cpu pprof-heap pprof-goroutine pprof-allocs pprof-trace
+
+# _pprof-probe runs curl against the admin port and emits a helpful
+# hint if pprof isn't responding (either the binary isn't running or
+# RFC_API_PPROF_ENABLED isn't true). Used by every pprof target.
+define _pprof-probe
+@if ! curl -fsS -o /dev/null "$(PPROF_PATH)/" 2>/dev/null; then \
+	echo "✗ $(PPROF_PATH)/ not reachable."; \
+	echo "   Is 'rfc-api serve' running, and is RFC_API_PPROF_ENABLED=true?"; \
+	echo "   Admin URL defaults to $(ADMIN_URL); override with ADMIN_URL=..."; \
+	exit 1; \
+fi
+endef
+
+pprof-cpu: ## 30s CPU profile, opens in `go tool pprof`
+	@ $(MAKE) --no-print-directory log-$@
+	$(call _pprof-probe)
+	@go tool pprof "$(PPROF_PATH)/profile?seconds=30"
+
+pprof-heap: ## Heap snapshot
+	@ $(MAKE) --no-print-directory log-$@
+	$(call _pprof-probe)
+	@go tool pprof "$(PPROF_PATH)/heap"
+
+pprof-goroutine: ## Goroutine dump
+	@ $(MAKE) --no-print-directory log-$@
+	$(call _pprof-probe)
+	@go tool pprof "$(PPROF_PATH)/goroutine"
+
+pprof-allocs: ## Allocation profile
+	@ $(MAKE) --no-print-directory log-$@
+	$(call _pprof-probe)
+	@go tool pprof "$(PPROF_PATH)/allocs"
+
+pprof-trace: ## 5s runtime trace, opens in `go tool trace`
+	@ $(MAKE) --no-print-directory log-$@
+	$(call _pprof-probe)
+	@tmpfile=$$(mktemp -t rfc-api-trace.XXXXXX) && \
+		curl -fsS "$(PPROF_PATH)/trace?seconds=5" -o "$$tmpfile" && \
+		go tool trace "$$tmpfile"
+
+###############
+##@ Smoke Tests
+
+BIN := $(BIN_DIR)/$(PROJECT_NAME)
+
+.PHONY: smoke smoke-help smoke-version smoke-unknown smoke-serve smoke-work smoke-soak
+
+smoke: smoke-help smoke-version smoke-unknown smoke-serve smoke-work ## Run every smoke test
+	@echo "✓ all smoke tests passed"
+
+smoke-help: build ## CLI with no args prints usage, exits 0
+	@ $(MAKE) --no-print-directory log-$@
+	@out=$$($(BIN) 2>&1); rc=$$?; \
+		[ $$rc -eq 0 ] || { echo "✗ expected exit 0, got $$rc"; exit 1; }; \
+		echo "$$out" | grep -q "Usage:" || { echo "✗ no Usage: in output"; exit 1; }; \
+		echo "✓ help"
+
+smoke-version: build ## `rfc-api version` prints version line, exits 0
+	@ $(MAKE) --no-print-directory log-$@
+	@out=$$($(BIN) version 2>&1); rc=$$?; \
+		[ $$rc -eq 0 ] || { echo "✗ expected exit 0, got $$rc"; exit 1; }; \
+		echo "$$out" | grep -qE "^rfc-api .+\\(.+\\)$$" || { echo "✗ unexpected version output: $$out"; exit 1; }; \
+		echo "✓ version"
+
+smoke-unknown: build ## Unknown subcommand exits 1
+	@ $(MAKE) --no-print-directory log-$@
+	@$(BIN) not-a-real-command >/dev/null 2>&1; rc=$$?; \
+		[ $$rc -eq 1 ] || { echo "✗ expected exit 1, got $$rc"; exit 1; }; \
+		echo "✓ unknown"
+
+smoke-serve: build ## `rfc-api serve` handles SIGTERM cleanly (exit 0)
+	@ $(MAKE) --no-print-directory log-$@
+	@set -e; \
+		DATABASE_URL=postgres://x:y@127.0.0.1:5432/z \
+		MEILI_MASTER_KEY=smoke \
+		RFC_API_WEBHOOK_SECRET=smoke \
+		RFC_API_LISTEN=127.0.0.1:0 \
+		RFC_API_ADMIN_LISTEN=127.0.0.1:0 \
+		$(BIN) serve >/tmp/rfc-api.smoke-serve.log 2>&1 & \
+		pid=$$!; \
+		sleep 0.5; \
+		kill -TERM $$pid; \
+		wait $$pid; rc=$$?; \
+		[ $$rc -eq 0 ] || { echo "✗ expected exit 0, got $$rc"; cat /tmp/rfc-api.smoke-serve.log; exit 1; }; \
+		grep -q '"main server stopped"' /tmp/rfc-api.smoke-serve.log || { echo "✗ no 'main server stopped' log"; cat /tmp/rfc-api.smoke-serve.log; exit 1; }; \
+		grep -q '"admin server stopped"' /tmp/rfc-api.smoke-serve.log || { echo "✗ no 'admin server stopped' log"; cat /tmp/rfc-api.smoke-serve.log; exit 1; }; \
+		echo "✓ serve"
+
+## Default soak duration in seconds. IMPL-0001 success criterion is a
+## 60-minute soak; that's run on a schedule, not from PR CI. Override
+## via DURATION=<seconds> for a full run.
+SOAK_DURATION ?= 120
+SOAK_MAIN_PORT ?= 18180
+SOAK_ADMIN_PORT ?= 18181
+
+smoke-soak: build ## Drive synthetic traffic against `rfc-api serve` and assert no goroutine leak
+	@ $(MAKE) --no-print-directory log-$@
+	@set -e; \
+		DATABASE_URL=postgres://x:y@127.0.0.1:5432/z \
+		MEILI_MASTER_KEY=soak \
+		RFC_API_WEBHOOK_SECRET=soak \
+		RFC_API_LISTEN=127.0.0.1:$(SOAK_MAIN_PORT) \
+		RFC_API_ADMIN_LISTEN=127.0.0.1:$(SOAK_ADMIN_PORT) \
+		RFC_API_PPROF_ENABLED=true \
+		$(BIN) serve >/tmp/rfc-api.soak.log 2>&1 & \
+		pid=$$!; \
+		trap 'kill -TERM $$pid 2>/dev/null || true' EXIT; \
+		echo "→ waiting for admin port $(SOAK_ADMIN_PORT)"; \
+		for i in $$(seq 1 30); do \
+			curl -sf http://127.0.0.1:$(SOAK_ADMIN_PORT)/healthz >/dev/null && break || sleep 0.1; \
+		done; \
+		start_gor=$$(curl -sf http://127.0.0.1:$(SOAK_ADMIN_PORT)/metrics | awk '/^go_goroutines /{print $$2}'); \
+		echo "→ starting soak: $(SOAK_DURATION)s, start goroutines=$$start_gor"; \
+		end=$$(( $$(date +%s) + $(SOAK_DURATION) )); \
+		req=0; \
+		while [ $$(date +%s) -lt $$end ]; do \
+			curl -sf -o /dev/null http://127.0.0.1:$(SOAK_MAIN_PORT)/api/v1/types || true; \
+			curl -sf -o /dev/null http://127.0.0.1:$(SOAK_MAIN_PORT)/api/v1/docs || true; \
+			curl -sf -o /dev/null "http://127.0.0.1:$(SOAK_MAIN_PORT)/api/v1/rfc?limit=5" || true; \
+			curl -sf -o /dev/null http://127.0.0.1:$(SOAK_MAIN_PORT)/api/v1/missing/0001 || true; \
+			req=$$((req + 4)); \
+		done; \
+		sleep 2; \
+		end_gor=$$(curl -sf http://127.0.0.1:$(SOAK_ADMIN_PORT)/metrics | awk '/^go_goroutines /{print $$2}'); \
+		echo "→ finished: $$req requests, end goroutines=$$end_gor"; \
+		delta=$$(awk -v a=$$end_gor -v b=$$start_gor 'BEGIN{d=a-b; if(d<0) d=-d; print d}'); \
+		limit=10; \
+		[ $$delta -le $$limit ] || { echo "✗ goroutine leak: delta=$$delta (>$$limit)"; cat /tmp/rfc-api.soak.log | tail -30; exit 1; }; \
+		kill -TERM $$pid; \
+		wait $$pid; rc=$$?; \
+		[ $$rc -eq 0 ] || { echo "✗ expected exit 0, got $$rc"; cat /tmp/rfc-api.soak.log | tail -30; exit 1; }; \
+		echo "✓ soak ($$req requests, goroutine delta=$$delta)"
+
+smoke-work: build ## `rfc-api work` handles SIGTERM cleanly (exit 0)
+	@ $(MAKE) --no-print-directory log-$@
+	@set -e; \
+		$(BIN) work >/tmp/rfc-api.smoke-work.log 2>&1 & \
+		pid=$$!; \
+		sleep 0.5; \
+		kill -TERM $$pid; \
+		wait $$pid; rc=$$?; \
+		[ $$rc -eq 0 ] || { echo "✗ expected exit 0, got $$rc"; cat /tmp/rfc-api.smoke-work.log; exit 1; }; \
+		grep -q '"worker stopped"' /tmp/rfc-api.smoke-work.log || { echo "✗ no 'worker stopped' log"; cat /tmp/rfc-api.smoke-work.log; exit 1; }; \
+		echo "✓ work"
 
 ## License Compliance
 

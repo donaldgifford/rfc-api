@@ -29,4 +29,10 @@ docz create rfc "Your RFC Title"
 - **Superseded**: Replaced by another RFC
 
 <!-- BEGIN DOCZ AUTO-GENERATED -->
+## All RFCs
+
+| ID | Title | Status | Date | Author | Link |
+|----|-------|--------|------|--------|------|
+| RFC-0001 | rfc-api: Backend API for the Markdown Portal | Draft | 2026-04-18 | Donald Gifford | [0001-rfc-api-backend-api-for-the-markdown-portal.md](0001-rfc-api-backend-api-for-the-markdown-portal.md) |
+| RFC-0002 | rfc-site: Web Frontend for the Markdown Portal | Draft | 2026-04-18 | Donald Gifford | [0002-rfc-site-web-frontend-for-the-markdown-portal.md](0002-rfc-site-web-frontend-for-the-markdown-portal.md) |
 <!-- END DOCZ AUTO-GENERATED -->
