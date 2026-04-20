@@ -563,7 +563,7 @@ what Phase 2 proves.
 
 **Response helpers**
 
-- [ ] `internal/server/render/render.go`: `JSON(w, status, v)`,
+- [x] `internal/server/render/render.go`: `JSON(w, status, v)`,
       `ProblemJSON(w, r, status, type, title, detail)`,
       `ArrayJSON(w, items, pageInfo)` — the last writes `Link`
       and `X-Total-Count` headers per the Resolved Decisions
@@ -571,25 +571,25 @@ what Phase 2 proves.
 
 **Handlers**
 
-- [ ] `handler/docs.go`: `Get`, `ListByType`, `ListAll`,
+- [x] `handler/docs.go`: `Get`, `ListByType`, `ListAll`,
       `Links`, `Discussion`, `Authors`, `Revisions`. Handlers
       read `r.PathValue("id")` and `routectx.From(r.Context())`
       for `(typeID, pattern)`. **No `r.Pattern` reads anywhere.**
-- [ ] `handler/search.go`: `Query` — reads `q`, `limit`,
+- [x] `handler/search.go`: `Query` — reads `q`, `limit`,
       `cursor`, forwards to `service.Search`.
-- [ ] `handler/types.go`: `List` — renders the registered
+- [x] `handler/types.go`: `List` — renders the registered
       `DocumentType` entries as the array shape documented in
       DESIGN-0001 §API surface. Pure registry read, no DB, no
       cache.
-- [ ] `handler/webhook.go`: `GitHub` — reads the raw body (after
+- [x] `handler/webhook.go`: `GitHub` — reads the raw body (after
       HMAC middleware has verified it), decodes, enqueues to
       worker (Phase 2: logs and returns 202, real enqueue is
       worker design).
-- [ ] Input validation: `limit` range check, `cursor`
+- [x] Input validation: `limit` range check, `cursor`
       well-formedness (base64-decodable, expected tuple shape),
       `type` known-registry membership. Invalid input maps to
       `ErrInvalidInput`.
-- [ ] Pagination: cursor tuple `{created, id}` implements the
+- [x] Pagination: cursor tuple `{created, id}` implements the
       `(created DESC, id ASC)` sort from DESIGN-0001 §API
       surface. Cursor is opaque base64 JSON to clients.
 
