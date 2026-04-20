@@ -52,6 +52,13 @@ type Server struct {
 // Deps is taken by pointer so callers pay a pointer cost per call,
 // not a 64+ byte copy.
 func New(deps *Deps) *Server {
+	logger := deps.Logger
+	if logger == nil {
+		// Test callers often leave Logger unset. Fall back to the
+		// slog default so .With below cannot panic.
+		logger = slog.Default()
+	}
+
 	var handler http.Handler
 	if deps.Registry == nil {
 		handler = fallbackMux()
@@ -83,7 +90,7 @@ func New(deps *Deps) *Server {
 			WriteTimeout:      deps.Config.WriteTimeout,
 			IdleTimeout:       120 * time.Second,
 		},
-		logger: deps.Logger.With("component", "main-server"),
+		logger: logger.With("component", "main-server"),
 	}
 }
 

@@ -61,7 +61,14 @@ func CORS(cfg *CORSConfig) Middleware {
 			w.Header().Set("Access-Control-Allow-Origin", origin)
 			w.Header().Add("Vary", "Origin")
 
-			if r.Method == http.MethodOptions && r.Header.Get("Access-Control-Request-Method") != "" {
+			// Any OPTIONS from an allow-listed origin short-circuits
+			// with 204 and the preflight headers. Strict preflights
+			// (with Access-Control-Request-Method) and lenient OPTIONS
+			// probes from some browsers both get a consistent response
+			// — otherwise the latter falls through to the mux, which
+			// has no OPTIONS route and would return a plain 405 that
+			// bypasses the RFC 7807 envelope.
+			if r.Method == http.MethodOptions {
 				w.Header().Set("Access-Control-Allow-Methods", methods)
 				w.Header().Set("Access-Control-Allow-Headers", headers)
 				if cfg.MaxAge > 0 {
