@@ -9,8 +9,13 @@ import (
 	"golang.org/x/sync/errgroup"
 
 	"github.com/donaldgifford/rfc-api/internal/config"
+	"github.com/donaldgifford/rfc-api/internal/domain/registry"
 	"github.com/donaldgifford/rfc-api/internal/obs"
+	"github.com/donaldgifford/rfc-api/internal/search"
 	"github.com/donaldgifford/rfc-api/internal/server"
+	"github.com/donaldgifford/rfc-api/internal/server/handler"
+	"github.com/donaldgifford/rfc-api/internal/service"
+	"github.com/donaldgifford/rfc-api/internal/store/memory"
 )
 
 // runServe is the entry point for `rfc-api serve`.
@@ -49,11 +54,30 @@ func runServe(ctx context.Context, logger *slog.Logger, args []string) error {
 		}
 	}()
 
-	probes := []server.ReadinessProbe{server.AlwaysReady{}}
+	reg, err := registry.New(cfg.DocumentTypes)
+	if err != nil {
+		return fmt.Errorf("build document-type registry: %w", err)
+	}
+
+	memStore := memory.New()
+	docsSvc := service.NewDocs(memStore, reg)
+	searchSvc := service.NewSearch(search.NoopClient{}, reg)
+	handlers := server.Handlers{
+		Docs:    handler.NewDocs(docsSvc),
+		Search:  handler.NewSearch(searchSvc),
+		Types:   handler.NewTypes(reg),
+		Webhook: handler.NewWebhook(logger),
+	}
+
+	probes := []server.ReadinessProbe{server.AlwaysReady{}, memory.PostgresProbe{}}
 
 	admin := server.NewAdmin(cfg.Admin, probes, tp.Provider(), logger)
 	main := server.New(&server.Deps{
 		Config:         cfg.Server,
+		RateLimit:      cfg.RateLimit,
+		Registry:       reg,
+		Handlers:       handlers,
+		WebhookSecret:  cfg.Webhook.Secret,
 		TracerProvider: tp.Provider(),
 		Logger:         logger,
 	})

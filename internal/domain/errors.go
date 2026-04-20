@@ -32,4 +32,10 @@ var (
 	// Meilisearch, GitHub, OIDC provider) is the cause of the failure.
 	// Maps to HTTP 502.
 	ErrUpstream = errors.New("upstream failure")
+
+	// ErrUnauthenticated is returned when a request's credentials are
+	// missing, malformed, or rejected. Phase 2 use: webhook HMAC
+	// failure; Phase 4 extends this to OIDC JWT verification. Maps to
+	// HTTP 401.
+	ErrUnauthenticated = errors.New("unauthenticated")
 )

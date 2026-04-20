@@ -21,6 +21,10 @@ import (
 // and wiring stays visible at the cmd/ layer.
 type Deps struct {
 	Config         config.Server
+	RateLimit      config.RateLimit
+	Registry       domain.DocumentTypeRegistry
+	Handlers       Handlers
+	WebhookSecret  string
 	TracerProvider trace.TracerProvider
 	Logger         *slog.Logger
 }
@@ -38,22 +42,26 @@ type Server struct {
 // Start(ctx) is responsible for binding the listener. This keeps the
 // constructor pure and testable.
 //
-// Phase 1: the main mux has only a catch-all 404 handler that emits
-// RFC 7807 via httperr. Phase 2 registers /api/v1/* routes via the
-// registry-driven loop (see DESIGN-0001 §Route registration).
+// When deps.Registry is nil the server falls back to a Phase 1-style
+// catch-all 404 — useful for smoke-testing the lifecycle without a
+// full registry. Production wiring must supply a registry and the
+// handler set.
 //
 // Deps is taken by pointer so callers pay a pointer cost per call,
 // not a 64+ byte copy.
 func New(deps *Deps) *Server {
-	mux := http.NewServeMux()
-
-	// Catch-all: Go 1.22+ ServeMux treats "/" as a prefix match for
-	// anything not otherwise registered. Phase 2 routes are more
-	// specific and win; this is the fallback.
-	mux.HandleFunc("/", func(w http.ResponseWriter, r *http.Request) {
-		httperr.Write(w, r, fmt.Errorf("no route for %s %s: %w",
-			r.Method, r.URL.Path, domain.ErrNotFound))
-	})
+	var handler http.Handler
+	if deps.Registry == nil {
+		handler = fallbackMux()
+	} else {
+		v1 := V1ChainFromConfig(deps.Config, deps.RateLimit)
+		handler = BuildMainHandler(
+			deps.Handlers,
+			deps.Registry,
+			&v1,
+			deps.WebhookSecret,
+		)
+	}
 
 	chain := middleware.Chain(
 		middleware.OTel(deps.TracerProvider),
@@ -66,7 +74,7 @@ func New(deps *Deps) *Server {
 		addr: deps.Config.Listen,
 		http: &http.Server{
 			Addr:              deps.Config.Listen,
-			Handler:           chain(mux),
+			Handler:           chain(handler),
 			ReadHeaderTimeout: deps.Config.ReadTimeout,
 			ReadTimeout:       deps.Config.ReadTimeout,
 			WriteTimeout:      deps.Config.WriteTimeout,
@@ -74,6 +82,17 @@ func New(deps *Deps) *Server {
 		},
 		logger: deps.Logger.With("component", "main-server"),
 	}
+}
+
+// fallbackMux returns the Phase 1 catch-all used when no registry is
+// configured. Kept as a named function for test reuse.
+func fallbackMux() http.Handler {
+	mux := http.NewServeMux()
+	mux.HandleFunc("/", func(w http.ResponseWriter, r *http.Request) {
+		httperr.Write(w, r, fmt.Errorf("no route for %s %s: %w",
+			r.Method, r.URL.Path, domain.ErrNotFound))
+	})
+	return mux
 }
 
 // Start binds the listener and serves until ctx is canceled. Drains

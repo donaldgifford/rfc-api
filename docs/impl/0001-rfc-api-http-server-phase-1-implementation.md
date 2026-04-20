@@ -595,26 +595,26 @@ what Phase 2 proves.
 
 **Routing**
 
-- [ ] `internal/server/router.go`: `buildMainHandler(...)` loop
+- [x] `internal/server/router.go`: `buildMainHandler(...)` loop
       per DESIGN-0001 §Route registration. Per-type paths are
       string-concatenated, not wildcard-routed. Cross-type
       `/api/v1/docs`, `/api/v1/search`, `/api/v1/types` are fixed.
-- [ ] `withRoute(typeID, pattern, handler)` closure at
+- [x] `withRoute(typeID, pattern, handler)` closure at
       registration stashes `routectx` on each request's context
       before calling the handler. Every per-type and cross-type
       route uses it.
 - [ ] Inner wrapper inside `withRoute` renames the OTel server
       span to `METHOD pattern` once the mux has dispatched.
-- [ ] Webhook route registered on main mux (outside v1 chain)
+- [x] Webhook route registered on main mux (outside v1 chain)
       with `VerifyGitHubHMAC` as a per-route wrap.
 
 **v1 middleware chain**
 
-- [ ] `middleware/timeout.go`: `context.WithTimeout` per-request;
+- [x] `middleware/timeout.go`: `context.WithTimeout` per-request;
       deadline-aware response via `httperr`.
-- [ ] `middleware/cors.go`: wraps `github.com/rs/cors` with
+- [x] `middleware/cors.go`: wraps `github.com/rs/cors` with
       allow-list from config; default-deny.
-- [ ] `middleware/ratelimit.go`:
+- [x] `middleware/ratelimit.go`:
       `RateLimit(ctx, rps, burst, KeyFunc)` — token bucket via
       `golang.org/x/time/rate`, per-key map, TTL eviction (default
       1h, 5min sweep) in a goroutine tied to `ctx`. `KeyFunc` is
@@ -623,13 +623,13 @@ what Phase 2 proves.
       that prefers the authenticated principal. Webhook bypasses
       via per-route registration outside the v1 chain; admin-port
       endpoints bypass by being on a different server.
-- [ ] `middleware/auth.go`: pass-through stub with a single
+- [x] `middleware/auth.go`: pass-through stub with a single
       TODO linking to RFC-0001 Phase 4. Signature and placement
       match what the real middleware will need.
 
 **Webhook HMAC**
 
-- [ ] `middleware/githubhmac.go`: read full body into memory
+- [x] `middleware/githubhmac.go`: read full body into memory
       (small — GitHub caps webhook payloads), verify
       `X-Hub-Signature-256` with
       `crypto/subtle.ConstantTimeCompare`, replace `r.Body` with
@@ -637,17 +637,17 @@ what Phase 2 proves.
 
 **Tests (Phase 2 scope)**
 
-- [ ] Handler tests: one file per handler, `httptest.NewRequest`
+- [x] Handler tests: one file per handler, `httptest.NewRequest`
       + `httptest.NewRecorder`, covering happy path and every
       domain-error branch.
-- [ ] Registry test: register a fake type `test` and assert the
+- [x] Registry test: register a fake type `test` and assert the
       full per-type route set is mounted and responsive — proves
       DESIGN-0002's "adding a type is a config change" claim.
 - [ ] Integration: full server against `httptest.NewServer`,
       exercise request-id propagation, error envelope,
       pagination headers, rate-limit 429, webhook HMAC positive
       + negative, CORS preflight.
-- [ ] Unit: `docid.Canonical` / `docid.Parse` / `docid.URLForm`
+- [x] Unit: `docid.Canonical` / `docid.Parse` / `docid.URLForm`
       round-trip.
 
 #### Success Criteria

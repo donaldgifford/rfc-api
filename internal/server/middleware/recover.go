@@ -23,7 +23,7 @@ var errPanicRecovered = errors.New("panic recovered")
 // capture the panicking request.
 func Recover(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		defer func() {
+		defer func() { //nolint:contextcheck // defer closure captures r.Context()
 			rec := recover()
 			if rec == nil {
 				return
