@@ -331,13 +331,14 @@ in RFC-0001 can be pointed at without further changes to `main`,
 - [x] `internal/server/admin.go`: `AdminServer`,
       `NewAdmin(config.Admin, []ReadinessProbe, trace.TracerProvider, *slog.Logger)`,
       `Start(ctx)`. Admin-port server.
-- [ ] `cmd/rfc-api/serve.go`: wires an `errgroup.Group` that runs
+- [x] `cmd/rfc-api/serve.go`: wires an `errgroup.Group` that runs
       both servers under the signal-rooted context; either
       server's fatal error cancels the other via the errgroup
       context.
-- [ ] Graceful shutdown on context cancel with
+- [x] Graceful shutdown on context cancel with
       `RFC_API_SHUTDOWN_TIMEOUT` budget applied to both servers;
-      force-kill path logs and returns exit-code-2.
+      force-kill path logs and returns exit-code-2 (via
+      `errShutdownTimedOut` sentinel in main).
 - [x] `*http.Server` read/write/idle timeouts from config for the
       main server. Admin server deliberately has no write timeout
       (pprof CPU profile is long-running); read timeout short.

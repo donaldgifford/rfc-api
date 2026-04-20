@@ -185,13 +185,19 @@ smoke-unknown: build ## Unknown subcommand exits 1
 smoke-serve: build ## `rfc-api serve` handles SIGTERM cleanly (exit 0)
 	@ $(MAKE) --no-print-directory log-$@
 	@set -e; \
+		DATABASE_URL=postgres://x:y@127.0.0.1:5432/z \
+		MEILI_MASTER_KEY=smoke \
+		RFC_API_WEBHOOK_SECRET=smoke \
+		RFC_API_LISTEN=127.0.0.1:0 \
+		RFC_API_ADMIN_LISTEN=127.0.0.1:0 \
 		$(BIN) serve >/tmp/rfc-api.smoke-serve.log 2>&1 & \
 		pid=$$!; \
 		sleep 0.5; \
 		kill -TERM $$pid; \
 		wait $$pid; rc=$$?; \
 		[ $$rc -eq 0 ] || { echo "✗ expected exit 0, got $$rc"; cat /tmp/rfc-api.smoke-serve.log; exit 1; }; \
-		grep -q '"serve stopped"' /tmp/rfc-api.smoke-serve.log || { echo "✗ no 'serve stopped' log"; cat /tmp/rfc-api.smoke-serve.log; exit 1; }; \
+		grep -q '"main server stopped"' /tmp/rfc-api.smoke-serve.log || { echo "✗ no 'main server stopped' log"; cat /tmp/rfc-api.smoke-serve.log; exit 1; }; \
+		grep -q '"admin server stopped"' /tmp/rfc-api.smoke-serve.log || { echo "✗ no 'admin server stopped' log"; cat /tmp/rfc-api.smoke-serve.log; exit 1; }; \
 		echo "✓ serve"
 
 smoke-work: build ## `rfc-api work` handles SIGTERM cleanly (exit 0)
