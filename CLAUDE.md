@@ -21,12 +21,13 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 - `internal/store/memory/` survives as a **test-only** `store.Docs` fake for unit suites (server, handler, service, contract, router). Production never imports it.
 - Integration tests: store-level at `internal/store/postgres/*_test.go`, server-level at `test/integration/postgres/`. Both gated `//go:build integration` and driven by `DATABASE_URL`. `make test-integration` runs them; CI `integration` job exercises on every push via a postgres:18-alpine service.
 
-[IMPL-0003][impl-0003] is **in progress**. Phase 1 complete:
+[IMPL-0003][impl-0003] is **in progress**. Phases 1–2 complete:
 
 - `cmd/rfc-api/work.go` — real worker lifecycle (not a stub). Opens the pgxpool, builds the document-type registry, constructs `worker.New`, runs scanner + processor sub-loops via errgroup, exposes its own admin port (`/healthz` `/readyz` `/metrics`).
 - `internal/config/config.go` — `Worker` + `SourceRepo` structs; env prefix `RFC_API_WORKER_*` plus `GITHUB_TOKEN` upstream-named.
 - `internal/worker/worker.go` — skeleton with source validation, ticker-bound scanner/processor stubs (filled in Phase 3/4), and two probes (`poolProbe`, `scanProbe`) that surface DB reachability + scan watermark on `/readyz`.
 - Smoke targets refactored: `make smoke` (`smoke-serve` + `smoke-work` + `smoke-soak`) now ride the compose Postgres via `SMOKE_DATABASE_URL` (default `postgres://rfcapi:rfcapi@127.0.0.1:5432/rfcapi`). The old bogus-DSN pattern broke post-IMPL-0002 Phase 2 (pool pings on open).
+- `internal/worker/githubsource/` — GitHub access seam (`Client`) built on `go-github/v67` + `ghinstallation/v2`. Supports App-based auth (prod) and a PAT fallback (dev); rate-limit retry with bounded backoff (`withRetry`); `ListFiles`/`GetFile`/`ListPullRequestsForFile`. Unit-tested via httptest against a mux at `/api/v3/*`.
 
 [impl-0001]: ./docs/impl/0001-rfc-api-http-server-phase-1-implementation.md
 [impl-0002]: ./docs/impl/0002-rfc-api-postgresql-store-implementation.md

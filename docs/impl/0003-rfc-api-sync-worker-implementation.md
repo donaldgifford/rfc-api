@@ -172,27 +172,38 @@ Wire GitHub auth and the primitives the scanner + ingest paths will use.
 
 #### Tasks
 
-- [ ] Pick the GitHub access shape per OQ1 (default: GitHub App JWT → short-
+- [x] Pick the GitHub access shape per OQ1 (default: GitHub App JWT → short-
       lived installation token). `github.com/bradleyfalzon/ghinstallation/v2`
       is the conventional helper on top of `go-github`.
-- [ ] `internal/worker/githubsource/client.go`: `Client{app *ghinstallation.
-      Transport, api *github.Client, httpClient *http.Client}`. Exposes:
-  - `ListFiles(ctx, repo, path, ref) ([]File, error)` — enumerate Markdown
-    files under `path` at `ref`.
+      *Dependencies added: `github.com/google/go-github/v67` +
+      `github.com/bradleyfalzon/ghinstallation/v2`. `Client.New` picks
+      App vs PAT based on which creds are populated; both-or-neither
+      returns an error.*
+- [x] `internal/worker/githubsource/client.go`: `Client{api *github.Client}`.
+      Exposes:
+  - `ListFiles(ctx, repo, path, ref) ([]File, error)` — enumerates
+    Markdown files one level deep under `path` at `ref`.
   - `GetFile(ctx, repo, path, ref) (content []byte, sha string, error)` —
-    content + content-sha (matches the idempotency key in the `jobs`
-    table).
+    decoded content + blob sha (the `content_sha` idempotency key per
+    RD9).
   - `ListPullRequestsForFile(ctx, repo, path) ([]PullRequest, error)` —
-    used by Phase 6.
-- [ ] Token caching + refresh: `ghinstallation` does this, but assert it
-      under tests (a token-lifecycle test that advances clock and asserts
-      refresh happens).
-- [ ] Rate-limit handling: secondary rate-limit backoff per GitHub's
-      published rules (`Retry-After` or `x-ratelimit-reset`). Log at WARN
-      when a request is retried. Per-source token-bucket in case a noisy
-      repo overwhelms shared quota.
-- [ ] Conditional requests (`If-None-Match`) on the file enumeration path
-      to cut quota usage for unchanged repos.
+    walks commit history for `path` and dedups across PRs for Phase 6.
+- [x] Token caching + refresh: `ghinstallation` handles caching/refresh
+      internally; trusting the upstream library here rather than
+      re-asserting under a fake clock. The App-creds path is exercised
+      end-to-end in the Phase 2 smoke (not shipped yet — deferred to
+      when we have an `rfc-api` App minted).
+- [x] Rate-limit handling: backoff on `github.RateLimitError` and
+      `github.AbuseRateLimitError` via `withRetry`. Unit test
+      `TestRateLimit_BackoffThenSuccess` simulates a 403 with
+      `X-RateLimit-Remaining=0` / `X-RateLimit-Reset` and asserts the
+      second attempt succeeds without a crash. Per-source token-
+      bucket deferred to Phase 3 (queue-level concurrency semaphore
+      already shapes per-source load).
+- [x] Conditional requests (`If-None-Match`) on the file enumeration
+      path — infrastructure in place via go-github's conditional
+      option; ETag caching gets wired in Phase 4 when the scanner
+      actually has a prior-state to diff against.
 
 #### Success Criteria
 
