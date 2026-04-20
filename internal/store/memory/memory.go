@@ -211,6 +211,17 @@ func (s *Store) Authors(_ context.Context, id domain.DocumentID) ([]domain.Autho
 	return append([]domain.Author(nil), doc.Authors...), nil
 }
 
+// Upsert is a Phase-3 stub matching the Postgres implementation — the
+// memory store is read-only by construction; IMPL-0003's worker will
+// not touch it (the Postgres store replaces memory before the worker
+// lands per IMPL-0002 Phase 5).
+func (*Store) Upsert(_ context.Context, doc *domain.Document) error {
+	return fmt.Errorf(
+		"upsert %s: not implemented: memory store is seed-only (IMPL-0003 uses postgres)",
+		doc.ID,
+	)
+}
+
 // Revisions is a stub until the worker lands — every document's
 // history has a single synthetic entry pointing at the seed commit
 // so frontends can render the endpoint shape end-to-end.

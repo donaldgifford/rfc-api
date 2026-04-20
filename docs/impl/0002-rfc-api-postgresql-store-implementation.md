@@ -218,7 +218,7 @@ this phase so tests that don't need Postgres keep passing.
 
 #### Tasks
 
-- [ ] `internal/store/postgres/docs.go`: implement `store.Docs`. Read
+- [x] `internal/store/postgres/docs.go`: implement `store.Docs`. Read
       methods are one transaction each (read-only). Methods:
   - `Get(ctx, id)` — single-row read.
   - `List(ctx, q)` — keyset pagination on `(created_at DESC, id ASC)`; honor
@@ -236,14 +236,29 @@ this phase so tests that don't need Postgres keep passing.
     have a stable contract to target; the real write semantics
     (transaction shape, per-row replace for `authors`/`links`) land
     in [IMPL-0003][impl-0003] Phase 4.
-- [ ] Cursor encode/decode: reuse `internal/server/cursor` (already exists);
+      *Shipped `internal/store/postgres/docs.go` with all six read methods,
+      Upsert stub, and keyset-paginated List. SELECT uses a shared
+      `documentColumns` constant; sub-resource fetches pivot on
+      `ensureExists` so 404 precedes any not-found branch.*
+- [x] Cursor encode/decode: reuse `internal/server/cursor` (already exists);
       the store takes a `*store.Cursor`.
-- [ ] Nil-slice normalization: empty result sets return `[]domain.Link{}`,
+      *`List` accepts `*store.Cursor` directly; encode/decode stays at the
+      HTTP seam in `internal/server/cursor`.*
+- [x] Nil-slice normalization: empty result sets return `[]domain.Link{}`,
       not `nil`, so `render.ArrayJSON` doesn't have to special-case.
-- [ ] All SQL is parameterized. No `fmt.Sprintf` into query strings.
-- [ ] Error translation: `pgx.ErrNoRows` → `domain.ErrNotFound`; unique
+      *`Links`, `Authors`, `Revisions` all pre-allocate the returned slice
+      so empty results marshal as `[]`.*
+- [x] All SQL is parameterized. No `fmt.Sprintf` into query strings.
+      *Only parameterized queries; the four-branch keyset switch builds
+      distinct static query strings, never concatenates user input.*
+- [x] Error translation: `pgx.ErrNoRows` → `domain.ErrNotFound`; unique
       violations → `domain.ErrConflict`; connection/transport errors →
       `domain.ErrUpstream` (wrapped with context).
+      *Added `upstream(what, err)` helper that wraps with
+      `domain.ErrUpstream`; `pgx.ErrNoRows` returns
+      `fmt.Errorf("%w: %s", domain.ErrNotFound, id)`. Unique-violation
+      translation ships with `Upsert` in IMPL-0003 (stub returns a
+      not-implemented sentinel today).*
 
 #### Success Criteria
 
