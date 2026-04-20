@@ -41,6 +41,7 @@ created: 2026-04-20
 - [Testing Plan](#testing-plan)
 - [Dependencies](#dependencies)
 - [Open Questions](#open-questions)
+- [Resolved Decisions](#resolved-decisions)
 - [References](#references)
 <!--toc:end-->
 
@@ -382,44 +383,53 @@ New Go modules:
 
 ## Open Questions
 
-1. **GitHub access: App vs PAT.** A GitHub App gives per-installation
-   scoping, fine-grained permissions, and higher rate limits. A PAT is
-   one secret, simpler to bootstrap, and easier to test with. Default:
-   App for prod, PAT for dev (accept a `GITHUB_TOKEN` fallback when no
-   App creds are present). Revisit if the dev overhead of App creds is
-   too much.
-2. **Worker admin port shape.** Today the API owns one admin port. The
-   worker needs its own (`/healthz`, `/readyz`, `/metrics`, optional
-   `/debug/pprof/*`) so k8s can probe it independently. Default: a
-   distinct `RFC_API_WORKER_ADMIN_LISTEN` env var (defaults to
-   `127.0.0.1:8082`). Consistent env-var naming rule applies.
-3. **Single worker replica vs leader election.** v1 can run one replica
-   because the job table's lock-skip-locked already coordinates N of
-   them. Do we ship with leader election (Postgres advisory lock) to
-   prepare for HA, or keep one replica and add it when a concrete need
-   lands? Default: single replica, no election — the queue already
-   supports N>1 the day we need it.
-4. **Tombstone vs hard delete on file removal.** When a file disappears
-   from the source repo, do we (a) delete the document row and let links
-   go dangling (CASCADE cleans up links via FK), or (b) tombstone it
-   with a `deleted_at` column so the id can't be reused and external
-   links don't 404? Default: (a) hard delete; (b) if a real need appears.
-5. **Job retention after success.** Delete succeeded jobs, or keep with
-   `state='done'` for audit? Default: delete. Audit of what ingested
-   when is already available via `documents.updated_at`.
-6. **Backoff policy shape.** Exponential, decorrelated jitter, or just
-   fixed? Default: exponential with jitter, capped at 30 minutes. Max
-   attempts: 5 before dead-letter.
-7. **Fetch strategy: GitHub contents API vs sparse clone.** Contents API
-   is quota-metered; sparse clone is a larger dependency surface but
-   scales with repo size. Default: contents API for v1 (our repos are
-   small), swap if quota becomes real. Acknowledging this means git-
-   native parsers are ruled out until we revisit.
-8. **Parser name as config vs parser name as `DocumentType` field.**
-   DESIGN-0002 shows `parser` inside the type sketch. `SourceRepo.Parser`
-   here lets multiple sources for the same type use different parsers
-   (e.g. a future repo with non-docz frontmatter). Default: keep it on
-   the source, not the type, because the source is the lower abstraction.
+None at this time. See [#Resolved Decisions](#resolved-decisions) for
+the judgement calls closed during review.
+
+## Resolved Decisions
+
+1. **GitHub access: App for prod, PAT fallback for dev.** App creds
+   give per-installation scoping, fine-grained permissions, and higher
+   rate limits; a `GITHUB_TOKEN` PAT is accepted when App creds aren't
+   configured so dev bootstrap stays simple. Revisit if App onboarding
+   friction bites.
+2. **Worker admin port: `RFC_API_WORKER_ADMIN_LISTEN` (default
+   `127.0.0.1:8082`).** Separate from the API's admin port so k8s probes
+   each process independently. Matches the env-var naming rule and the
+   existing admin-port pattern.
+3. **Single worker replica, no leader election.** The queue's
+   `FOR UPDATE SKIP LOCKED` already coordinates N workers the day we
+   want N > 1; Postgres advisory-lock leader election is adjacent work
+   we'll add when a concrete HA need lands.
+4. **Hard delete on file removal, no tombstones.** When a file
+   disappears from the source repo, delete the `documents` row;
+   `ON DELETE CASCADE` cleans up `authors`, `links`, and `discussions`.
+   Re-creation is cheap; external-link 404s are not load-bearing at our
+   scale.
+5. **Delete jobs after success.** No `state='done'` retention. Audit of
+   "what ingested when" comes from `documents.updated_at`; the `jobs`
+   table stays small and cheap to index.
+6. **Backoff: exponential with jitter, capped at 30 minutes,
+   5 attempts.** After the 5th failure the job moves to
+   `state='dead'` for operator inspection and stays there.
+7. **Fetch strategy: GitHub contents API for v1.** Our corpus is small
+   enough that quota isn't the limit; swap to sparse clone only if quota
+   becomes a real constraint. Acknowledges that git-native parsers are
+   ruled out until we revisit.
+8. **Parser name lives on `SourceRepo`, not `DocumentType`.** Lets two
+   repos of the same type use different parsers (e.g. a future repo
+   with non-docz frontmatter) without fragmenting `DocumentType` per
+   source. DESIGN-0002's `DocumentType.Parser` sketch updated to reflect
+   this.
+9. **Job dedup key: opaque `dedup_key text NOT NULL` column,
+   `UNIQUE (kind, dedup_key)`.** Each job kind formats its own key:
+   - `ingest` → `content:<content_sha>`
+   - `reindex` → `doc:<document_id>`
+   - `discussion_fetch` → `discussion:<document_id>`
+   Resolves [IMPL-0002][impl-0002] Q7 and closes the schema shape for
+   `0001_init.sql`. Simpler constraint than the content_sha /
+   resource_id split and pushes the key-format choice to the job
+   producer (the most-informed caller).
 
 ## References
 

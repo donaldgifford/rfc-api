@@ -128,12 +128,15 @@ ships, changes become migrations rather than rewrites.
     Participants live in a separate `discussion_participants` join table.
   - `jobs` — the worker's queue (shape set here, semantics in
     [IMPL-0003][impl-0003]). Columns: `id uuid PRIMARY KEY`, `kind text
-    NOT NULL`, `payload jsonb NOT NULL`, `state text NOT NULL DEFAULT
-    'queued'`, `attempts int NOT NULL DEFAULT 0`, `locked_by text`, `locked_at
-    timestamptz`, `run_after timestamptz NOT NULL DEFAULT now()`, `created_at
-    timestamptz NOT NULL DEFAULT now()`, `updated_at timestamptz NOT NULL
-    DEFAULT now()`, UNIQUE constraint on the idempotency key
-    `(kind, (payload->>'content_sha'))` per RFC-0001 #Sync.
+    NOT NULL`, `dedup_key text NOT NULL` (producer-formatted, see
+    IMPL-0003 RD9), `payload jsonb NOT NULL`, `state text NOT NULL
+    DEFAULT 'queued'` (allowed values: `queued`, `leased`, `dead`),
+    `attempts int NOT NULL DEFAULT 0`, `locked_by text`, `locked_at
+    timestamptz`, `run_after timestamptz NOT NULL DEFAULT now()`,
+    `created_at timestamptz NOT NULL DEFAULT now()`, `updated_at
+    timestamptz NOT NULL DEFAULT now()`. `UNIQUE (kind, dedup_key)` is
+    the idempotency constraint; succeeded jobs are deleted (no `done`
+    state) per IMPL-0003 RD5.
 - [ ] `rfc-api migrate` subcommand: reads `DATABASE_URL`, runs migrations,
       exits. Codes: 0 ok, 1 failure.
 - [ ] `make migrate` target (calls the subcommand).
@@ -339,21 +342,8 @@ New Go modules:
 
 ## Open Questions
 
-1. **Job dedup key shape.** The initial sketch used `UNIQUE (kind,
-   (payload->>'content_sha'))`, which assumes every job kind carries
-   `content_sha` in its payload. Not every kind will: a `reindex` or
-   `discussion_fetch` keys more naturally on `document_id`, a scanner tick
-   keys on `source_id`, etc. Two reasonable shapes:
-   - **(a) Rename to `dedup_key text NOT NULL`** — one opaque column, each
-     job kind writes its own key format (`content_sha:<sha>`,
-     `doc:RFC-0001`, `source:rfc-repo/docs/rfc`). Unique on `(kind,
-     dedup_key)`. Simpler constraint, pushes the choice to the producer.
-   - **(b) Keep `content_sha` on ingest jobs, add a `resource_id` column
-     for others**, unique on `(kind, coalesce(content_sha, resource_id))`.
-     More structure, more migration if a new kind needs a different key.
-   Default proposal: **(a)**. Defer the final call to IMPL-0003 where the
-   concrete job kinds are designed; IMPL-0002 will ship whichever shape
-   IMPL-0003 chooses.
+None at this time. All earlier questions are closed in
+[#Resolved Decisions](#resolved-decisions).
 
 ## Resolved Decisions
 
@@ -389,6 +379,14 @@ New Go modules:
    interface. This gives IMPL-0003 and IMPL-0005 a stable contract to
    target, without IMPL-0002 shipping transactional write semantics that
    will be reshaped by the real worker design.
+8. **Job dedup key shape: opaque `dedup_key text NOT NULL` column,
+   `UNIQUE (kind, dedup_key)`.** Mirrors
+   [IMPL-0003][impl-0003] RD9. Each job kind formats its own key
+   (`content:<sha>`, `doc:<id>`, etc.) — simpler constraint than a
+   coalesced content_sha / resource_id split, and the job producer
+   picks the format it knows best. Schema for `0001_init.sql` updated
+   accordingly (replaces the earlier `(kind, (payload->>'content_sha'))`
+   sketch).
 
 ## References
 
