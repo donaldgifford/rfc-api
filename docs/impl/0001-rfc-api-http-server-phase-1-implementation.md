@@ -58,6 +58,23 @@ handler change.
 **Implements:** [DESIGN-0001][design-0001] (Phase 1 of
 [RFC-0001][rfc-0001]).
 
+**Status note (2026-04-20):** this IMPL is Completed for its declared
+scope — HTTP server, routing, middleware, observability, in-memory store,
+and OpenAPI contract test. Completing [RFC-0001][rfc-0001] end-to-end
+additionally requires:
+
+- [IMPL-0002][impl-0002] — PostgreSQL store replacing the in-memory one
+  (per [ADR-0002][adr-0002]).
+- [IMPL-0003][impl-0003] — sync worker (three-path reconciliation +
+  GitHub ingest).
+- [IMPL-0004][impl-0004] — parser plugin seam + `docz-markdown` parser
+  (resolves [DESIGN-0002][design-0002] Open Question 1).
+- [IMPL-0005][impl-0005] — Meilisearch search replacing the noop client
+  (per [ADR-0003][adr-0003]).
+
+Phase 4 of RFC-0001 (OIDC/OAuth2 auth) remains deferred to its own IMPL
+after the above four land.
+
 ## Scope
 
 ### In Scope
@@ -1020,4 +1037,8 @@ which they were answered.
 [adr-0001]: ../adr/0001-use-go-and-stdlib-net-http-for-rfc-api.md
 [adr-0002]: ../adr/0002-use-postgresql-as-the-rfc-api-datastore.md
 [adr-0003]: ../adr/0003-use-meilisearch-for-rfc-api-search.md
+[impl-0002]: ./0002-rfc-api-postgresql-store-implementation.md
+[impl-0003]: ./0003-rfc-api-sync-worker-implementation.md
+[impl-0004]: ./0004-rfc-api-parser-plugin-seam-implementation.md
+[impl-0005]: ./0005-rfc-api-meilisearch-search-implementation.md
 [inv-0001]: ../investigation/0001-oxide-rfd-system-architecture-case-study.md
