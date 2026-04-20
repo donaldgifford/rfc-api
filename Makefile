@@ -153,6 +153,53 @@ compose-logs: ## Tail compose logs (usage: make compose-logs SERVICE=postgres; o
 	@docker compose logs -f --tail=100 $(SERVICE)
 
 ###############
+##@ pprof
+
+ADMIN_URL ?= http://localhost:8081
+PPROF_PATH := $(ADMIN_URL)/debug/pprof
+
+.PHONY: pprof-cpu pprof-heap pprof-goroutine pprof-allocs pprof-trace
+
+# _pprof-probe runs curl against the admin port and emits a helpful
+# hint if pprof isn't responding (either the binary isn't running or
+# RFC_API_PPROF_ENABLED isn't true). Used by every pprof target.
+define _pprof-probe
+@if ! curl -fsS -o /dev/null "$(PPROF_PATH)/" 2>/dev/null; then \
+	echo "✗ $(PPROF_PATH)/ not reachable."; \
+	echo "   Is 'rfc-api serve' running, and is RFC_API_PPROF_ENABLED=true?"; \
+	echo "   Admin URL defaults to $(ADMIN_URL); override with ADMIN_URL=..."; \
+	exit 1; \
+fi
+endef
+
+pprof-cpu: ## 30s CPU profile, opens in `go tool pprof`
+	@ $(MAKE) --no-print-directory log-$@
+	$(call _pprof-probe)
+	@go tool pprof "$(PPROF_PATH)/profile?seconds=30"
+
+pprof-heap: ## Heap snapshot
+	@ $(MAKE) --no-print-directory log-$@
+	$(call _pprof-probe)
+	@go tool pprof "$(PPROF_PATH)/heap"
+
+pprof-goroutine: ## Goroutine dump
+	@ $(MAKE) --no-print-directory log-$@
+	$(call _pprof-probe)
+	@go tool pprof "$(PPROF_PATH)/goroutine"
+
+pprof-allocs: ## Allocation profile
+	@ $(MAKE) --no-print-directory log-$@
+	$(call _pprof-probe)
+	@go tool pprof "$(PPROF_PATH)/allocs"
+
+pprof-trace: ## 5s runtime trace, opens in `go tool trace`
+	@ $(MAKE) --no-print-directory log-$@
+	$(call _pprof-probe)
+	@tmpfile=$$(mktemp -t rfc-api-trace.XXXXXX) && \
+		curl -fsS "$(PPROF_PATH)/trace?seconds=5" -o "$$tmpfile" && \
+		go tool trace "$$tmpfile"
+
+###############
 ##@ Smoke Tests
 
 BIN := $(BIN_DIR)/$(PROJECT_NAME)

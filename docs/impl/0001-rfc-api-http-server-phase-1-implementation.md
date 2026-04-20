@@ -422,15 +422,17 @@ in RFC-0001 can be pointed at without further changes to `main`,
 
 **Makefile additions (pprof convenience)**
 
-- [ ] `make pprof-cpu` — 30s CPU profile against
+- [x] `make pprof-cpu` — 30s CPU profile against
       `http://localhost:8081/debug/pprof/profile?seconds=30`, opens
       in `go tool pprof`.
-- [ ] `make pprof-heap` — heap snapshot.
-- [ ] `make pprof-goroutine` — goroutine dump.
-- [ ] `make pprof-allocs` — allocation profile.
-- [ ] `make pprof-trace` — 5s runtime trace, opens in `go tool trace`.
-- [ ] Each prints a helpful hint if the endpoint 404s (likely
-      `RFC_API_PPROF_ENABLED=false`).
+- [x] `make pprof-heap` — heap snapshot.
+- [x] `make pprof-goroutine` — goroutine dump.
+- [x] `make pprof-allocs` — allocation profile.
+- [x] `make pprof-trace` — 5s runtime trace, opens in `go tool trace`.
+- [x] Each prints a helpful hint if the endpoint 404s / isn't
+      reachable (tells you to start `rfc-api serve` and set
+      `RFC_API_PPROF_ENABLED=true`). `ADMIN_URL` override supported
+      for non-default admin listen addresses.
 
 **Error envelope**
 
