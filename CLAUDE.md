@@ -33,11 +33,13 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 - `internal/server/handler/webhook.go` — webhook-driven reconcile. The HMAC-verified GitHub handler dispatches on `X-GitHub-Event`: `push` parses the payload and enqueues one `ingest` per touched `.md` (dedup `content:<head_commit.sha>`); `pull_request` / `pull_request_review` / `pull_request_review_comment` extract `(repo, pr_number)` and enqueue a PR-scope `discussion_fetch` job (dedup `discussion-pr:<repo>:<pr>`). API and worker share the `jobs` table through a single Postgres; no in-process queue between processes.
 - `internal/worker/discussion/` — `discussion_fetch` handler. Direct mode writes one doc's `(url, comment_count, last_activity, participants)` to `discussions` + `discussion_participants` (force-push-safe: participants are delete+reinsert in the same tx). PR-scope mode lists the PR's files, matches against `SourceRepo.Path`, and fans out per-doc direct jobs. Handler self-requeues at `Active` cadence (1h) for open PRs and `Archived` (24h) for merged/closed — combined with the webhook + ingest paths, a discussion refreshes on every meaningful event without the scanner owning the quota cost.
 
-[IMPL-0004][impl-0004] is **in progress**. Phases 1–3 complete:
+[IMPL-0004][impl-0004] is **Completed** (2026-04-20). The parser seam ships end-to-end:
 
 - `internal/domain/parser.go` — `Parser` interface; handlers receive `(raw []byte, DocumentType, Source)` and emit a framework-agnostic `Document`.
 - `internal/parser/` — `Registry` with `Register/Get/Names`; `Default` is the process-wide registry so parser packages register at `init()`.
-- `internal/parser/doczmarkdown/` — real parser for docz Markdown (YAML frontmatter + body). Two-pass YAML unmarshal isolates known fields vs. `Extensions` catch-all; canonical id, lifecycle validation, and structured authors all enforced. Link extraction via goldmark AST walk + regex fallback, dedup'd, with pre-computed `TargetURL`. Phase 4 (fake-type end-to-end harness) ships in step with IMPL-0003 Phase 4.
+- `internal/parser/doczmarkdown/` — real parser for docz Markdown (YAML frontmatter + body). Two-pass YAML unmarshal isolates known fields vs. `Extensions` catch-all; canonical id, lifecycle validation, and structured authors all enforced. Link extraction via goldmark AST walk + regex fallback, dedup'd, with pre-computed `TargetURL`.
+- `internal/parser/testparser/` — minimal YAML-only parser for the DESIGN-0002 fake-type harness. Registers as `test-parser`, skips Markdown + link extraction, but runs the same id-shape + prefix + lifecycle checks doczmarkdown does.
+- `test/integration/faketype_test.go` — graduates DESIGN-0002's "adding a type is a config change" claim from route-mounting (in `router_test.go`) to full parse → persist → serve. Spins up a contrived `tst` type through the registry + test-parser + in-memory store + server and asserts each sub-resource endpoint returns the expected shape, plus a lifecycle-violation 400 guard.
 
 [impl-0004]: ./docs/impl/0004-rfc-api-parser-plugin-seam-implementation.md
 

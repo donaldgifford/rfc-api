@@ -1,7 +1,7 @@
 ---
 id: IMPL-0004
 title: "rfc-api parser plugin seam implementation"
-status: In Progress
+status: Completed
 author: Donald Gifford
 created: 2026-04-20
 ---
@@ -9,7 +9,7 @@ created: 2026-04-20
 
 # IMPL 0004: rfc-api parser plugin seam implementation
 
-**Status:** In Progress (Phases 1–3 done; Phase 4 ships alongside IMPL-0003 Phase 4)
+**Status:** Completed
 **Author:** Donald Gifford
 **Date:** 2026-04-20
 
@@ -207,17 +207,45 @@ a real round-trip through the parser.
 
 #### Tasks
 
-- [ ] `internal/parser/testparser/parser.go`: a minimal parser used
+- [x] `internal/parser/testparser/parser.go`: a minimal parser used
       only in tests. Takes `raw []byte` as a YAML document, unmarshals
       into `domain.Document` directly — no Markdown, no link extraction.
-- [ ] Register under name `test-parser`.
-- [ ] `test/integration/faketype_test.go`: end-to-end test that
+      *`Parser.Parse` unmarshals `rawDoc` (id/title/status/authors/
+      labels/body/extensions/created/updated) via `yaml.v3`, validates
+      the id shape + prefix against the type, runs the same lifecycle
+      check doczmarkdown uses, and constructs a `domain.Document` with
+      the canonical id via `docid.Canonical`. No Markdown parse, no
+      link extraction — the point of the harness is to exercise the
+      seam, not duplicate doczmarkdown behavior.*
+- [x] Register under name `test-parser`.
+      *`init()` calls `parser.MustRegister("test-parser", Parser{})`.
+      A blank import (`_ "github.com/donaldgifford/rfc-api/internal/
+      parser/testparser"`) is sufficient to make the name resolvable
+      from `parser.Default.Get`.*
+- [x] `test/integration/faketype_test.go`: end-to-end test that
       registers a `tst` type with `test-parser`, seeds a couple of YAML
       fixtures via the in-memory queue, and asserts each sub-resource
       endpoint is wired and returns the expected shape.
-- [ ] Lifecycle enforcement: a document with `status: Invalid` and a
+      *Six test cases hit `/api/v1/tst/0001`, `/api/v1/tst`,
+      `/api/v1/tst/0001/authors`, `/api/v1/tst/0001/links`,
+      `/api/v1/types`, and a lifecycle-violation 400 assertion. Uses
+      the in-memory store via `memory.Add` (not the worker queue —
+      the queue + ingest handler are already exercised by
+      IMPL-0003 Phase 4 tests; this harness isolates the
+      parser-registry + router-mount claim DESIGN-0002 makes). Not
+      gated by the `integration` build tag — runs on every
+      `make test`.*
+- [x] Lifecycle enforcement: a document with `status: Invalid` and a
       type that declares a lifecycle returns `ErrUnknownStatus`, mapped
       to 400 via `httperr`.
+      *Per Phase 1 RD, we use `errors.Is(domain.ErrInvalidInput)` as
+      the semantic contract rather than introducing a distinct
+      `ErrUnknownStatus` constant. Both doczmarkdown and testparser
+      enforce `status ∈ Lifecycle` and wrap `ErrInvalidInput` on
+      violation; `httperr.classify` routes `ErrInvalidInput` to 400
+      (`httperr.go:52`). Proof lives in the
+      `TestFakeType_LifecycleViolation_Returns400` +
+      `TestParse_LifecycleViolation_Errors` unit tests.*
 
 #### Success Criteria
 
