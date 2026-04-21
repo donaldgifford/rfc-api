@@ -25,6 +25,7 @@ func DesiredSettings() *meili.Settings {
 		FilterableAttributes: []string{
 			"author_handles",
 			"labels",
+			"parent_id",
 			"status",
 			"type",
 			"visibility",

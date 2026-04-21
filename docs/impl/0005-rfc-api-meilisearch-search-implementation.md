@@ -182,17 +182,22 @@ whole docs.
 
 #### Tasks
 
-- [ ] `internal/search/meilisearch/indexer.go`: `Indexer{client}` with
-      `Upsert(ctx, docs []domain.Document) error` and `Delete(ctx, id
-      domain.DocumentID) error`.
-- [ ] Per-section split: walk the Markdown AST (reusing goldmark from
+- [x] `internal/search/meilisearch/indexer.go`: `Indexer{client,types}` with
+      `Upsert(ctx, doc *domain.Document)` (single doc — ingest path) and
+      `Delete(ctx, id domain.DocumentID)`. Upsert is delete-by-filter +
+      re-add so a section lost between ingests leaves no orphan.
+- [x] Per-section split: walk the Markdown AST (reusing goldmark from
       [IMPL-0004][impl-0004]), split into sub-documents at H1/H2
       boundaries (see OQ2 on depth). Each sub-doc's indexed id is
       `{document_id}#{section_slug}`; `parent_id` is the document id;
       `section_heading` carries the heading text; `body_excerpt` carries
-      the prose under that heading up to ~500 chars.
-- [ ] Batched writes: Meili's bulk API handles up to 10k docs per call
-      comfortably; batch appropriately.
+      the prose under that heading up to ~500 chars. Extensions flatten
+      as `ext_<prefix>_<key>`; every record carries `visibility: internal`
+      per ADR-0003. `parent_id` added to filterableAttributes so
+      delete-by-filter clears all sub-sections.
+- [x] Batched writes: `indexBatchSize = 1024` keeps individual payloads
+      in the low-MB range while letting a reindex drive Meili's task
+      queue near its practical ceiling.
 - [ ] `reindex` job kind (enqueued by IMPL-0003 Phase 4 on every upsert)
       triggers the `Upsert` path; the worker consumes it.
 - [ ] Deletion propagation: IMPL-0003 Phase 4's tombstone path enqueues
