@@ -97,8 +97,8 @@ Wire the Meili SDK into both processes with correctly scoped credentials.
 
 #### Tasks
 
-- [ ] Pick the SDK (default: `github.com/meilisearch/meilisearch-go`,
-      the official client).
+- [x] Pick the SDK (default: `github.com/meilisearch/meilisearch-go`,
+      the official client). Pulled in at v0.36.2.
 - [x] `internal/config/config.go`: add `Meili` struct with `URL string`
       (upstream-standard: `MEILI_URL`), `MasterKey string`
       (`MEILI_MASTER_KEY`, already reserved), `APIKey string`
@@ -107,9 +107,10 @@ Wire the Meili SDK into both processes with correctly scoped credentials.
       the memory rule (upstream name unchanged for external deps).
       `ReadKey()` / `WriteSecret()` helpers fall back to MasterKey when
       explicit keys are unset (dev single-knob pattern).
-- [ ] `internal/search/meilisearch/client.go`: `Client{c *meilisearch.
+- [x] `internal/search/meilisearch/client.go`: `Client{c *meilisearch.
       Client}`. Constructors `NewReadClient(cfg)` and `NewWriteClient(cfg)`
-      that pick the right key.
+      that pick the right key. Ping() wraps HealthWithContext; 5s default
+      HTTP timeout.
 - [ ] Key provisioning: at operator bootstrap (documented in `docs/local-
       dev.md`), use the master key once to create a read-only key (actions:
       `search`) and a write key (actions: `documents.*`, `indexes.*`,
