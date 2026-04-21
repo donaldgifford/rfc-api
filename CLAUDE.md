@@ -49,7 +49,10 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 [impl-0003]: ./docs/impl/0003-rfc-api-sync-worker-implementation.md
 [impl-0005]: ./docs/impl/0005-rfc-api-meilisearch-search-implementation.md
 
-**Next up:** [IMPL-0005][impl-0005] — Meilisearch search (the `reindex` job kind emitted by the ingest handler currently has no consumer; this IMPL wires the search writer + `/api/v1/search` handler).
+**In progress:** [IMPL-0005][impl-0005] — Meilisearch search.
+
+- Phase 1 landed: `internal/search/meilisearch/` wraps the official `meilisearch-go` SDK with `NewReadClient(cfg)` / `NewWriteClient(cfg)` that pick the right scoped key from `config.Meili`; `Probe{Client}` satisfies `server.ReadinessProbe` and is wired into `rfc-api serve` alongside the Postgres probe. `MEILI_URL` defaults to `http://localhost:7700`; `APIKey` / `WriteKey` fall back to `MasterKey` so dev stays one-knob.
+- Still open: per-index settings + per-section indexer + real `search.Client.Query` (NoopClient is still the wired client until Phase 4) + `rfc-api reindex` subcommand + Meili integration tests.
 
 ## Local development
 

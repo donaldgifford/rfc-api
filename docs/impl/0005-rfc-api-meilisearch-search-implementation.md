@@ -116,10 +116,12 @@ Wire the Meili SDK into both processes with correctly scoped credentials.
       `search`) and a write key (actions: `documents.*`, `indexes.*`,
       `settings.*`). Keys are secrets; master key never flows to running
       pods.
-- [ ] Health probe on the API: `ReadinessProbe` pinging `/health`
+- [x] Health probe on the API: `ReadinessProbe` pinging `/health`
       endpoint. Logs degradation; readiness drops on failure but does not
       take the main API down — search failures degrade to 503 from the
-      search endpoint only.
+      search endpoint only. Probe lives in
+      `internal/search/meilisearch/probe.go`, wired in serve.go alongside
+      the Postgres probe.
 
 #### Success Criteria
 
