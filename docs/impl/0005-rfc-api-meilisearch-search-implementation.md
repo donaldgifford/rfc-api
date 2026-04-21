@@ -99,12 +99,14 @@ Wire the Meili SDK into both processes with correctly scoped credentials.
 
 - [ ] Pick the SDK (default: `github.com/meilisearch/meilisearch-go`,
       the official client).
-- [ ] `internal/config/config.go`: add `Meili` struct with `URL string`
+- [x] `internal/config/config.go`: add `Meili` struct with `URL string`
       (upstream-standard: `MEILI_URL`), `MasterKey string`
       (`MEILI_MASTER_KEY`, already reserved), `APIKey string`
       (`MEILI_API_KEY` — read-scoped for the API), `WriteKey string`
       (`MEILI_WRITE_KEY` — scoped for the worker). Env-var naming follows
       the memory rule (upstream name unchanged for external deps).
+      `ReadKey()` / `WriteSecret()` helpers fall back to MasterKey when
+      explicit keys are unset (dev single-knob pattern).
 - [ ] `internal/search/meilisearch/client.go`: `Client{c *meilisearch.
       Client}`. Constructors `NewReadClient(cfg)` and `NewWriteClient(cfg)`
       that pick the right key.

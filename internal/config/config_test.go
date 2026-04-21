@@ -220,6 +220,57 @@ func TestValidate_RequiredFieldsMissing(t *testing.T) {
 	}
 }
 
+func TestLoad_MeiliEnv(t *testing.T) {
+	withRequired(t)
+	t.Setenv("MEILI_URL", "http://meili.svc:7700")
+	t.Setenv("MEILI_API_KEY", "read-only-key")
+	t.Setenv("MEILI_WRITE_KEY", "write-scoped-key")
+
+	cfg, err := config.Load(nil, "")
+	if err != nil {
+		t.Fatalf("Load() error = %v", err)
+	}
+	if cfg.Meili.URL != "http://meili.svc:7700" {
+		t.Errorf("Meili.URL = %q", cfg.Meili.URL)
+	}
+	if cfg.Meili.ReadKey() != "read-only-key" {
+		t.Errorf("ReadKey = %q, want read-only-key", cfg.Meili.ReadKey())
+	}
+	if cfg.Meili.WriteSecret() != "write-scoped-key" {
+		t.Errorf("WriteSecret = %q, want write-scoped-key", cfg.Meili.WriteSecret())
+	}
+}
+
+func TestMeili_KeyFallsBackToMaster(t *testing.T) {
+	m := config.Meili{MasterKey: "master-only"}
+	if got := m.ReadKey(); got != "master-only" {
+		t.Errorf("ReadKey fallback = %q, want master-only", got)
+	}
+	if got := m.WriteSecret(); got != "master-only" {
+		t.Errorf("WriteSecret fallback = %q, want master-only", got)
+	}
+
+	m.APIKey = "r"
+	m.WriteKey = "w"
+	if got := m.ReadKey(); got != "r" {
+		t.Errorf("ReadKey explicit = %q, want r", got)
+	}
+	if got := m.WriteSecret(); got != "w" {
+		t.Errorf("WriteSecret explicit = %q, want w", got)
+	}
+}
+
+func TestLoad_MeiliURLDefault(t *testing.T) {
+	withRequired(t)
+	cfg, err := config.Load(nil, "")
+	if err != nil {
+		t.Fatalf("Load() error = %v", err)
+	}
+	if cfg.Meili.URL != "http://localhost:7700" {
+		t.Errorf("Meili.URL default = %q, want http://localhost:7700", cfg.Meili.URL)
+	}
+}
+
 func TestLoad_FlagParseError(t *testing.T) {
 	withRequired(t)
 	_, err := config.Load([]string{"--not-a-real-flag"}, "")
