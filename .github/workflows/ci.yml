@@ -156,7 +156,7 @@ jobs:
           --health-timeout 5s
           --health-retries 5
       meilisearch:
-        image: getmeili/meilisearch:v1.11
+        image: getmeili/meilisearch:v1.20
         env:
           MEILI_MASTER_KEY: ci-only
           MEILI_NO_ANALYTICS: "true"
