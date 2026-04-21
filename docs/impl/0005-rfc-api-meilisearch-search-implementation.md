@@ -111,11 +111,11 @@ Wire the Meili SDK into both processes with correctly scoped credentials.
       Client}`. Constructors `NewReadClient(cfg)` and `NewWriteClient(cfg)`
       that pick the right key. Ping() wraps HealthWithContext; 5s default
       HTTP timeout.
-- [ ] Key provisioning: at operator bootstrap (documented in `docs/local-
-      dev.md`), use the master key once to create a read-only key (actions:
-      `search`) and a write key (actions: `documents.*`, `indexes.*`,
-      `settings.*`). Keys are secrets; master key never flows to running
-      pods.
+- [x] Key provisioning: at operator bootstrap (documented in `docs/local-
+      dev.md` #Meilisearch key provisioning), use the master key once to
+      create a read-only key (actions: `search`) and a write key (actions:
+      `documents.*`, `indexes.*`, `settings.*`). Keys are secrets; master
+      key never flows to running pods.
 - [x] Health probe on the API: `ReadinessProbe` pinging `/health`
       endpoint. Logs degradation; readiness drops on failure but does not
       take the main API down — search failures degrade to 503 from the
