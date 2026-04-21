@@ -45,8 +45,9 @@ type Page struct {
 	Total      int
 }
 
-// Docs is the set of document read operations. Writes come later
-// with the ingest worker (separate design doc). All methods honor
+// Docs is the set of document operations exposed by a store. Reads
+// are the entire v1 surface; Upsert is a stub in IMPL-0002 (real
+// write semantics arrive with IMPL-0003's worker). All methods honor
 // ctx for cancellation and tracing.
 type Docs interface {
 	Get(ctx context.Context, id domain.DocumentID) (domain.Document, error)
@@ -55,6 +56,12 @@ type Docs interface {
 	Discussion(ctx context.Context, id domain.DocumentID) (domain.Discussion, error)
 	Authors(ctx context.Context, id domain.DocumentID) ([]domain.Author, error)
 	Revisions(ctx context.Context, id domain.DocumentID) ([]Revision, error)
+
+	// Upsert inserts or replaces a document. Stubbed in IMPL-0002 —
+	// the in-memory store and the Postgres store both return a
+	// not-implemented error. IMPL-0003 wires the real path; the
+	// doc pointer avoids a 264-byte pass-by-value on hot loops.
+	Upsert(ctx context.Context, doc *domain.Document) error
 }
 
 // Revision is a stub in Phase 2 (see IMPL-0001). Populated by the

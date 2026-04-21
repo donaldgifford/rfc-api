@@ -55,7 +55,7 @@ func spinUp(t *testing.T, opts ...func(*V1Override)) *httptest.Server {
 		Docs:    handler.NewDocs(service.NewDocs(mem, reg)),
 		Search:  handler.NewSearch(service.NewSearch(search.NoopClient{}, reg)),
 		Types:   handler.NewTypes(reg),
-		Webhook: handler.NewWebhook(slog.Default()),
+		Webhook: handler.NewWebhook(&handler.WebhookConfig{Logger: slog.Default()}),
 	}
 
 	override := V1Override{

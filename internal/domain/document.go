@@ -75,8 +75,13 @@ type Discussion struct {
 // Source identifies where the document was ingested from. Path is
 // relative to the repo root; Commit pins the exact revision the
 // currently-served body came from so the API is reproducible.
+// CommitTime is the upstream commit timestamp, used by parsers as a
+// fallback for CreatedAt/UpdatedAt when the frontmatter omits them
+// (parsers must never I/O, so the worker resolves this and threads
+// it through Source at ingest time).
 type Source struct {
-	Repo   string `json:"repo"`
-	Path   string `json:"path"`
-	Commit string `json:"commit,omitempty"`
+	Repo       string    `json:"repo"`
+	Path       string    `json:"path"`
+	Commit     string    `json:"commit,omitempty"`
+	CommitTime time.Time `json:"commit_time,omitzero"`
 }

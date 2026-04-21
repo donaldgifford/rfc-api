@@ -33,4 +33,8 @@ docz create impl "Your Implementation Title"
 | ID | Title | Status | Date | Author | Link |
 |----|-------|--------|------|--------|------|
 | IMPL-0001 | rfc-api HTTP server phase 1 implementation | Completed | 2026-04-19 | Donald Gifford | [0001-rfc-api-http-server-phase-1-implementation.md](0001-rfc-api-http-server-phase-1-implementation.md) |
+| IMPL-0002 | rfc-api PostgreSQL store implementation | Draft | 2026-04-20 | Donald Gifford | [0002-rfc-api-postgresql-store-implementation.md](0002-rfc-api-postgresql-store-implementation.md) |
+| IMPL-0003 | rfc-api sync worker implementation | Draft | 2026-04-20 | Donald Gifford | [0003-rfc-api-sync-worker-implementation.md](0003-rfc-api-sync-worker-implementation.md) |
+| IMPL-0004 | rfc-api parser plugin seam implementation | Draft | 2026-04-20 | Donald Gifford | [0004-rfc-api-parser-plugin-seam-implementation.md](0004-rfc-api-parser-plugin-seam-implementation.md) |
+| IMPL-0005 | rfc-api Meilisearch search implementation | Draft | 2026-04-20 | Donald Gifford | [0005-rfc-api-meilisearch-search-implementation.md](0005-rfc-api-meilisearch-search-implementation.md) |
 <!-- END DOCZ AUTO-GENERATED -->

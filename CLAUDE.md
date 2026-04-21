@@ -9,11 +9,43 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 - `cmd/rfc-api/` — `serve` + `work` subcommands under a small dispatcher; `version` / `help`; signal-rooted ctx; errgroup lifecycle for both servers.
 - `internal/server/` — main + admin servers, registry-driven `/api/v1/{type}/*` router with cross-type `/docs` / `/search` / `/types`, full middleware chain (OTel → recover → request-id → logger → metrics on root; timeout → CORS → rate-limit → auth-stub on v1), RFC 7807 problem+json error envelope, per-route GitHub webhook with HMAC verification.
 - `internal/domain/` — framework-agnostic `Document`, `DocumentType`, registry (prefix + id uniqueness enforced at load), `docid` pure helpers.
-- `internal/service/` + `internal/store/memory/` — service layer + in-memory store (JSON seed). `internal/search` ships a `NoopClient` for v1; Meilisearch lands later.
+- `internal/service/` — service layer. `internal/search` ships a `NoopClient` for v1; Meilisearch lands later.
 - `internal/obs/` — OTel TracerProvider (OTLP/gRPC when `OTEL_EXPORTER_OTLP_ENDPOINT` is set, no-op otherwise), Prometheus registry + HTTP collectors.
 - `api/openapi.yaml` — hand-authored OAS 3.1. `test/contract/` validates every handler against it via `kin-openapi` on every CI run.
 
+[IMPL-0002][impl-0002] is **Completed** (2026-04-19). The production store is Postgres end-to-end:
+
+- `db/migrations/` — forward-only SQL; `db/embed.go` bundles them into the binary. `db.NewMigrator(dsn)` is shared by `rfc-api migrate` and the integration-test `TestMain`.
+- `cmd/rfc-api/migrate.go` — `rfc-api migrate` subcommand (golang-migrate + `iofs`).
+- `internal/store/postgres/` — pgx/v5 pool (`pool.go`), `store.Docs` implementation (`docs.go`) with keyset pagination on `(created_at DESC, id ASC)`, and `Probe{Pool}` for `/readyz` (`probe.go`). Wired in `cmd/rfc-api/serve.go`.
+- `internal/store/memory/` survives as a **test-only** `store.Docs` fake for unit suites (server, handler, service, contract, router). Production never imports it.
+- Integration tests: store-level at `internal/store/postgres/*_test.go`, server-level at `test/integration/postgres/`. Both gated `//go:build integration` and driven by `DATABASE_URL`. `make test-integration` runs them; CI `integration` job exercises on every push via a postgres:18-alpine service.
+
+[IMPL-0003][impl-0003] is **Completed** (2026-04-20). The sync worker runs end-to-end:
+
+- `cmd/rfc-api/work.go` — real worker lifecycle (not a stub). Opens the pgxpool, builds the document-type registry, constructs `worker.New`, runs scanner + processor sub-loops via errgroup, exposes its own admin port (`/healthz` `/readyz` `/metrics`).
+- `internal/config/config.go` — `Worker` + `SourceRepo` structs; env prefix `RFC_API_WORKER_*` plus `GITHUB_TOKEN` upstream-named.
+- `internal/worker/worker.go` — source validation, probes (`poolProbe`, `scanProbe`), and an errgroup lifecycle that runs the scanner + processor + admin under a single cancellation.
+- Smoke targets refactored: `make smoke` (`smoke-serve` + `smoke-work` + `smoke-soak`) now ride the compose Postgres via `SMOKE_DATABASE_URL` (default `postgres://rfcapi:rfcapi@127.0.0.1:5432/rfcapi`). The old bogus-DSN pattern broke post-IMPL-0002 Phase 2 (pool pings on open).
+- `internal/worker/githubsource/` — GitHub access seam (`Client`) built on `go-github/v67` + `ghinstallation/v2`. Supports App-based auth (prod) and a PAT fallback (dev); rate-limit retry with bounded backoff (`withRetry`); `ListFiles`/`GetFile`/`ListPullRequestsForFile`/`ListPullRequestComments`/`ListPullRequestFiles`. Unit-tested via httptest against a mux at `/api/v3/*`.
+- `internal/worker/queue/` — Postgres-backed job queue. `Queue` has `Enqueue/Lease/Succeed/Fail/Depth`; `Lease` uses a CTE + `FOR UPDATE SKIP LOCKED` so N workers coordinate without an external broker. `Leaser` owns the poll loop + per-kind concurrency semaphore + panic recovery. Five Prometheus metrics (`rfc_api_worker_jobs_*` + `queue_depth`) live on `obs.Metrics` and render on the worker's `/metrics`. Integration tests gated `//go:build integration`.
+- `internal/worker/scanner/` + `internal/worker/ingest/` — ingest pipeline. Scanner ticks every `ScannerInterval`, lists files per `SourceRepo`, diffs against `documents.source_commit`, enqueues `ingest` jobs (dedup `content:<sha>`), and hard-deletes anything the remote dropped. Ingest handler fetches, resolves the parser, parses, transactionally upserts (`postgres.Docs.Upsert` replaces authors + links, preserves `created_at`), and emits `reindex` + `discussion_fetch` jobs.
+- `internal/server/handler/webhook.go` — webhook-driven reconcile. The HMAC-verified GitHub handler dispatches on `X-GitHub-Event`: `push` parses the payload and enqueues one `ingest` per touched `.md` (dedup `content:<head_commit.sha>`); `pull_request` / `pull_request_review` / `pull_request_review_comment` extract `(repo, pr_number)` and enqueue a PR-scope `discussion_fetch` job (dedup `discussion-pr:<repo>:<pr>`). API and worker share the `jobs` table through a single Postgres; no in-process queue between processes.
+- `internal/worker/discussion/` — `discussion_fetch` handler. Direct mode writes one doc's `(url, comment_count, last_activity, participants)` to `discussions` + `discussion_participants` (force-push-safe: participants are delete+reinsert in the same tx). PR-scope mode lists the PR's files, matches against `SourceRepo.Path`, and fans out per-doc direct jobs. Handler self-requeues at `Active` cadence (1h) for open PRs and `Archived` (24h) for merged/closed — combined with the webhook + ingest paths, a discussion refreshes on every meaningful event without the scanner owning the quota cost.
+
+[IMPL-0004][impl-0004] is **Completed** (2026-04-20). The parser seam ships end-to-end:
+
+- `internal/domain/parser.go` — `Parser` interface; handlers receive `(raw []byte, DocumentType, Source)` and emit a framework-agnostic `Document`.
+- `internal/parser/` — `Registry` with `Register/Get/Names`; `Default` is the process-wide registry so parser packages register at `init()`.
+- `internal/parser/doczmarkdown/` — real parser for docz Markdown (YAML frontmatter + body). Two-pass YAML unmarshal isolates known fields vs. `Extensions` catch-all; canonical id, lifecycle validation, and structured authors all enforced. Link extraction via goldmark AST walk + regex fallback, dedup'd, with pre-computed `TargetURL`.
+- `internal/parser/testparser/` — minimal YAML-only parser for the DESIGN-0002 fake-type harness. Registers as `test-parser`, skips Markdown + link extraction, but runs the same id-shape + prefix + lifecycle checks doczmarkdown does.
+- `test/integration/faketype_test.go` — graduates DESIGN-0002's "adding a type is a config change" claim from route-mounting (in `router_test.go`) to full parse → persist → serve. Spins up a contrived `tst` type through the registry + test-parser + in-memory store + server and asserts each sub-resource endpoint returns the expected shape, plus a lifecycle-violation 400 guard.
+
+[impl-0004]: ./docs/impl/0004-rfc-api-parser-plugin-seam-implementation.md
+
 [impl-0001]: ./docs/impl/0001-rfc-api-http-server-phase-1-implementation.md
+[impl-0002]: ./docs/impl/0002-rfc-api-postgresql-store-implementation.md
+[impl-0003]: ./docs/impl/0003-rfc-api-sync-worker-implementation.md
 
 ## Local development
 

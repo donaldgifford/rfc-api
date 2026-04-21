@@ -36,6 +36,7 @@ type Config struct {
 	Meili           Meili          `yaml:"meili"`
 	OTel            OTel           `yaml:"otel"`
 	Webhook         Webhook        `yaml:"webhook"`
+	Worker          Worker         `yaml:"worker"`
 	DocumentTypes   []DocumentType `yaml:"document_types"`
 	ShutdownTimeout time.Duration  `yaml:"shutdown_timeout"`
 }
@@ -109,6 +110,33 @@ type Webhook struct {
 	Secret string `yaml:"secret"`
 }
 
+// Worker holds the `rfc-api work` process settings per IMPL-0003
+// Phase 1. Zero-value Worker (no sources) means the worker idles:
+// it's a warning, not a crash.
+type Worker struct {
+	AdminListen             string        `yaml:"admin_listen"`
+	ScannerInterval         time.Duration `yaml:"scanner_interval"`
+	ProcessorPollInterval   time.Duration `yaml:"processor_poll_interval"`
+	MaxConcurrent           int           `yaml:"max_concurrent"`
+	GitHubAppID             string        `yaml:"github_app_id"`
+	GitHubAppInstallationID string        `yaml:"github_app_installation_id"`
+	GitHubAppPrivateKey     string        `yaml:"github_app_private_key"`
+	GitHubToken             string        `yaml:"github_token"`
+	SourceRepos             []SourceRepo  `yaml:"source_repos"`
+}
+
+// SourceRepo binds a GitHub source path to a DocumentType in the
+// registry. TypeID must match a registered type; validation catches
+// typos at startup. Parser is a lookup key into IMPL-0004's parser
+// registry — per RD8, parser lives on SourceRepo not DocumentType.
+type SourceRepo struct {
+	TypeID string `yaml:"type_id"`
+	Repo   string `yaml:"repo"`
+	Path   string `yaml:"path"`
+	Parser string `yaml:"parser"`
+	Branch string `yaml:"branch"`
+}
+
 // Load returns a populated Config, applying the precedence
 // defaults < file < env < flags. args should be os.Args[1:] minus the
 // subcommand (e.g. os.Args[2:]).
@@ -163,6 +191,12 @@ func defaults() *Config {
 		},
 		OTel: OTel{
 			TraceSampleRatio: 0.1,
+		},
+		Worker: Worker{
+			AdminListen:           "127.0.0.1:8082",
+			ScannerInterval:       5 * time.Minute,
+			ProcessorPollInterval: 2 * time.Second,
+			MaxConcurrent:         4,
 		},
 		ShutdownTimeout: 20 * time.Second,
 		DocumentTypes: []DocumentType{
@@ -221,6 +255,15 @@ func loadEnv(cfg *Config) {
 	setFloat(&cfg.OTel.TraceSampleRatio, "RFC_API_TRACE_SAMPLE_RATIO")
 
 	setString(&cfg.Webhook.Secret, "RFC_API_WEBHOOK_SECRET")
+
+	setString(&cfg.Worker.AdminListen, "RFC_API_WORKER_ADMIN_LISTEN")
+	setDuration(&cfg.Worker.ScannerInterval, "RFC_API_WORKER_SCANNER_INTERVAL")
+	setDuration(&cfg.Worker.ProcessorPollInterval, "RFC_API_WORKER_PROCESSOR_POLL_INTERVAL")
+	setInt(&cfg.Worker.MaxConcurrent, "RFC_API_WORKER_MAX_CONCURRENT")
+	setString(&cfg.Worker.GitHubAppID, "RFC_API_WORKER_GITHUB_APP_ID")
+	setString(&cfg.Worker.GitHubAppInstallationID, "RFC_API_WORKER_GITHUB_APP_INSTALLATION_ID")
+	setString(&cfg.Worker.GitHubAppPrivateKey, "RFC_API_WORKER_GITHUB_APP_PRIVATE_KEY")
+	setString(&cfg.Worker.GitHubToken, "GITHUB_TOKEN")
 
 	setDuration(&cfg.ShutdownTimeout, "RFC_API_SHUTDOWN_TIMEOUT")
 

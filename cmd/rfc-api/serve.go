@@ -15,7 +15,8 @@ import (
 	"github.com/donaldgifford/rfc-api/internal/server"
 	"github.com/donaldgifford/rfc-api/internal/server/handler"
 	"github.com/donaldgifford/rfc-api/internal/service"
-	"github.com/donaldgifford/rfc-api/internal/store/memory"
+	"github.com/donaldgifford/rfc-api/internal/store/postgres"
+	"github.com/donaldgifford/rfc-api/internal/worker/queue"
 )
 
 // runServe is the entry point for `rfc-api serve`.
@@ -54,22 +55,38 @@ func runServe(ctx context.Context, logger *slog.Logger, args []string) error {
 		}
 	}()
 
+	// Open the database pool before constructing any server-layer
+	// dependencies so a bad DATABASE_URL or unreachable DB fails fast
+	// (exit code 1) rather than mid-request.
+	pool, err := postgres.NewPool(ctx, cfg.Database.URL, logger)
+	if err != nil {
+		return fmt.Errorf("open postgres pool: %w", err)
+	}
+	defer pool.Close()
+
 	reg, err := registry.New(cfg.DocumentTypes)
 	if err != nil {
 		return fmt.Errorf("build document-type registry: %w", err)
 	}
 
-	memStore := memory.New()
-	docsSvc := service.NewDocs(memStore, reg)
+	docsStore := postgres.NewDocs(pool)
+	docsSvc := service.NewDocs(docsStore, reg)
 	searchSvc := service.NewSearch(search.NoopClient{}, reg)
 	handlers := server.Handlers{
-		Docs:    handler.NewDocs(docsSvc),
-		Search:  handler.NewSearch(searchSvc),
-		Types:   handler.NewTypes(reg),
-		Webhook: handler.NewWebhook(logger),
+		Docs:   handler.NewDocs(docsSvc),
+		Search: handler.NewSearch(searchSvc),
+		Types:  handler.NewTypes(reg),
+		Webhook: handler.NewWebhook(&handler.WebhookConfig{
+			Logger:  logger,
+			Sources: cfg.Worker.SourceRepos,
+			// API shares the jobs table with the worker — both
+			// processes talk to the same Postgres; no in-process
+			// channel between them.
+			Queue: queue.New(pool, queue.Options{}),
+		}),
 	}
 
-	probes := []server.ReadinessProbe{server.AlwaysReady{}, memory.PostgresProbe{}}
+	probes := []server.ReadinessProbe{server.AlwaysReady{}, postgres.Probe{Pool: pool}}
 	metrics := obs.NewMetrics()
 
 	admin := server.NewAdmin(cfg.Admin, probes, tp.Provider(), metrics, logger)

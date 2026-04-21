@@ -1,11 +1,12 @@
-// Package memory is an in-memory implementation of store.Docs,
-// seeded from JSON files matching the API wire format. Per IMPL-0001
-// the JSON files double as expected-response fixtures in integration
-// tests so one corpus backs both the seed and the contract checks.
+// Package memory is an in-process store.Docs used as a test fake.
+// Production code uses internal/store/postgres exclusively after
+// IMPL-0002 Phase 5; this package remains so server-, handler-, and
+// service-layer unit tests can exercise the full stack without a
+// database running.
 //
 // The store is read-only after construction and safe for concurrent
-// reads. Phase 3 replaces it with a real Postgres store; swapping
-// should not require any change under internal/server/.
+// reads. Tests that need write semantics use Add before the server
+// starts.
 package memory
 
 import (
@@ -209,6 +210,17 @@ func (s *Store) Authors(_ context.Context, id domain.DocumentID) ([]domain.Autho
 		return nil, fmt.Errorf("%w: %s", domain.ErrNotFound, id)
 	}
 	return append([]domain.Author(nil), doc.Authors...), nil
+}
+
+// Upsert is a Phase-3 stub matching the Postgres implementation — the
+// memory store is read-only by construction; IMPL-0003's worker will
+// not touch it (the Postgres store replaces memory before the worker
+// lands per IMPL-0002 Phase 5).
+func (*Store) Upsert(_ context.Context, doc *domain.Document) error {
+	return fmt.Errorf(
+		"upsert %s: not implemented: memory store is seed-only (IMPL-0003 uses postgres)",
+		doc.ID,
+	)
 }
 
 // Revisions is a stub until the worker lands — every document's

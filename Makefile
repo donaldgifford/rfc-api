@@ -73,6 +73,11 @@ test-coverage: ## Run tests with coverage report
 	@ $(MAKE) --no-print-directory log-$@
 	@go test -v -race -coverprofile=$(COVERAGE_OUT) ./...
 
+test-integration: ## Run integration tests (requires DATABASE_URL)
+	@ $(MAKE) --no-print-directory log-$@
+	@test -n "$$DATABASE_URL" || { echo "DATABASE_URL is required for integration tests"; exit 2; }
+	@go test -v -race -tags=integration ./internal/store/postgres/... ./test/integration/...
+
 
 ## Code Quality
 
@@ -153,6 +158,29 @@ compose-logs: ## Tail compose logs (usage: make compose-logs SERVICE=postgres; o
 	@docker compose logs -f --tail=100 $(SERVICE)
 
 ###############
+##@ Database
+
+.PHONY: migrate migrate-down
+
+migrate: ## Apply pending database migrations (reads DATABASE_URL from .env / env)
+	@ $(MAKE) --no-print-directory log-$@
+	@set -a; [ -f .env ] && . ./.env; set +a; \
+		go run ./cmd/rfc-api migrate
+
+migrate-down: ## Reverse every migration (dev-only; requires CONFIRM=1)
+	@ $(MAKE) --no-print-directory log-$@
+	@if [ "$(CONFIRM)" != "1" ]; then \
+		printf "This will DROP every table in DATABASE_URL. Continue? [y/N] "; \
+		read -r REPLY; \
+		case "$$REPLY" in \
+			[yY]|[yY][eE][sS]) ;; \
+			*) echo "aborted."; exit 1 ;; \
+		esac; \
+	fi
+	@set -a; [ -f .env ] && . ./.env; set +a; \
+		mise exec -- migrate -path db/migrations -database "$$DATABASE_URL" down -all
+
+###############
 ##@ pprof
 
 ADMIN_URL ?= http://localhost:8081
@@ -229,10 +257,16 @@ smoke-unknown: build ## Unknown subcommand exits 1
 		[ $$rc -eq 1 ] || { echo "✗ expected exit 1, got $$rc"; exit 1; }; \
 		echo "✓ unknown"
 
+## Smoke targets need a reachable Postgres (the pool pings on open
+## since IMPL-0002 Phase 2). Source .env when present so the smoke
+## rides the compose stack; callers can override DATABASE_URL in the
+## environment.
+SMOKE_DATABASE_URL ?= postgres://rfcapi:rfcapi@127.0.0.1:5432/rfcapi?sslmode=disable
+
 smoke-serve: build ## `rfc-api serve` handles SIGTERM cleanly (exit 0)
 	@ $(MAKE) --no-print-directory log-$@
 	@set -e; \
-		DATABASE_URL=postgres://x:y@127.0.0.1:5432/z \
+		DATABASE_URL="$${DATABASE_URL:-$(SMOKE_DATABASE_URL)}" \
 		MEILI_MASTER_KEY=smoke \
 		RFC_API_WEBHOOK_SECRET=smoke \
 		RFC_API_LISTEN=127.0.0.1:0 \
@@ -257,7 +291,7 @@ SOAK_ADMIN_PORT ?= 18181
 smoke-soak: build ## Drive synthetic traffic against `rfc-api serve` and assert no goroutine leak
 	@ $(MAKE) --no-print-directory log-$@
 	@set -e; \
-		DATABASE_URL=postgres://x:y@127.0.0.1:5432/z \
+		DATABASE_URL="$${DATABASE_URL:-$(SMOKE_DATABASE_URL)}" \
 		MEILI_MASTER_KEY=soak \
 		RFC_API_WEBHOOK_SECRET=soak \
 		RFC_API_LISTEN=127.0.0.1:$(SOAK_MAIN_PORT) \
@@ -295,13 +329,18 @@ smoke-soak: build ## Drive synthetic traffic against `rfc-api serve` and assert 
 smoke-work: build ## `rfc-api work` handles SIGTERM cleanly (exit 0)
 	@ $(MAKE) --no-print-directory log-$@
 	@set -e; \
+		DATABASE_URL="$${DATABASE_URL:-$(SMOKE_DATABASE_URL)}" \
+		MEILI_MASTER_KEY=smoke \
+		RFC_API_WEBHOOK_SECRET=smoke \
+		RFC_API_WORKER_ADMIN_LISTEN=127.0.0.1:0 \
 		$(BIN) work >/tmp/rfc-api.smoke-work.log 2>&1 & \
 		pid=$$!; \
 		sleep 0.5; \
 		kill -TERM $$pid; \
 		wait $$pid; rc=$$?; \
 		[ $$rc -eq 0 ] || { echo "✗ expected exit 0, got $$rc"; cat /tmp/rfc-api.smoke-work.log; exit 1; }; \
-		grep -q '"worker stopped"' /tmp/rfc-api.smoke-work.log || { echo "✗ no 'worker stopped' log"; cat /tmp/rfc-api.smoke-work.log; exit 1; }; \
+		grep -q 'worker started with no source_repos' /tmp/rfc-api.smoke-work.log || { echo "✗ no idle-start log"; cat /tmp/rfc-api.smoke-work.log; exit 1; }; \
+		grep -q '"admin server stopped"' /tmp/rfc-api.smoke-work.log || { echo "✗ no 'admin server stopped' log"; cat /tmp/rfc-api.smoke-work.log; exit 1; }; \
 		echo "✓ work"
 
 ## License Compliance

@@ -15,6 +15,10 @@ nav:
     - Implementation Plans:
         - Overview: impl/README.md
         - 'IMPL-0001: rfc-api HTTP server phase 1 implementation': impl/0001-rfc-api-http-server-phase-1-implementation.md
+        - 'IMPL-0002: rfc-api PostgreSQL store implementation': impl/0002-rfc-api-postgresql-store-implementation.md
+        - 'IMPL-0003: rfc-api sync worker implementation': impl/0003-rfc-api-sync-worker-implementation.md
+        - 'IMPL-0004: rfc-api parser plugin seam implementation': impl/0004-rfc-api-parser-plugin-seam-implementation.md
+        - 'IMPL-0005: rfc-api Meilisearch search implementation': impl/0005-rfc-api-meilisearch-search-implementation.md
     - Investigations:
         - Overview: investigation/README.md
         - 'INV-0001: Oxide RFD system: architecture case study': investigation/0001-oxide-rfd-system-architecture-case-study.md
@@ -24,6 +28,7 @@ nav:
         - Overview: rfc/README.md
         - 'RFC-0001: rfc-api: Backend API for the Markdown Portal': rfc/0001-rfc-api-backend-api-for-the-markdown-portal.md
         - 'RFC-0002: rfc-site: Web Frontend for the Markdown Portal': rfc/0002-rfc-site-web-frontend-for-the-markdown-portal.md
+    - Local development: local-dev.md
 plugins:
     - techdocs-core
 site_description: Documentation for rfc-api

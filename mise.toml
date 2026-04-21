@@ -25,6 +25,13 @@ jq = "latest"
 "github:donaldgifford/docz" = "latest"
 
 
+# Database migrations (IMPL-0002 RD1).
+# Release-binary install with the postgres driver precompiled. The
+# `rfc-api migrate` subcommand uses the golang-migrate library
+# directly and does not depend on this CLI; the CLI is here for
+# ad-hoc operator inspection (`migrate -source ... status`).
+"github:golang-migrate/migrate" = { version = "v4.18.1", exe = "migrate" }
+
 # Release tools
 golangci-lint = "2.11.4"
 
