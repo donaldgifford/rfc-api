@@ -1,17 +1,18 @@
 ---
 id: IMPL-0005
 title: "rfc-api Meilisearch search implementation"
-status: Draft
+status: Completed
 author: Donald Gifford
 created: 2026-04-20
+updated: 2026-04-21
 ---
 <!-- markdownlint-disable-file MD025 MD041 -->
 
 # IMPL 0005: rfc-api Meilisearch search implementation
 
-**Status:** Draft
+**Status:** Completed
 **Author:** Donald Gifford
-**Date:** 2026-04-20
+**Date:** 2026-04-21
 
 <!--toc:start-->
 - [Objective](#objective)
@@ -309,14 +310,17 @@ a settings change or index loss.
 ## Testing Plan
 
 - **Unit** — query DSL translation, settings idempotency, section split
-  correctness, extension key flattening.
-- **Integration** — testcontainers-go with `meilisearch:v1`; seed a
-  small corpus, exercise query variants, highlight rendering, filter
-  combinations.
+  correctness, extension key flattening. All landed in
+  `internal/search/meilisearch/*_test.go`.
+- **Integration** — live Meilisearch via GitHub Actions service
+  container (pinned `getmeili/meilisearch:v1.11`). `test/integration/
+  search/` seeds a two-doc corpus and exercises query / per-type
+  filter / delete-clears-sections / settings-idempotency /
+  distinct-parent-count. Runs via `make test-integration-search`.
 - **Contract** — existing `test/contract/` suite stays green after
   response-shape changes; new fields added additively.
-- **Soak** — extend `make smoke-soak` with search queries against a
-  seeded corpus; assert stable latency + no goroutine growth.
+- **Soak** — `make smoke-soak` extension deferred; the current suite
+  exercises the serve path without search queries.
 
 ## Dependencies
 

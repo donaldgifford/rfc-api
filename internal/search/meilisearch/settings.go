@@ -92,11 +92,7 @@ func ApplySettings(ctx context.Context, c *Client) error {
 	if err != nil {
 		return fmt.Errorf("meilisearch: update settings: %w", err)
 	}
-
-	if _, err := c.svc.WaitForTaskWithContext(ctx, task.TaskUID, settingsTaskPoll); err != nil {
-		return fmt.Errorf("meilisearch: wait for settings task %d: %w", task.TaskUID, err)
-	}
-	return nil
+	return c.awaitTask(ctx, task.TaskUID, "update settings")
 }
 
 // ensureIndex creates the canonical index if GetIndex reports 404.
@@ -117,10 +113,7 @@ func ensureIndex(ctx context.Context, c *Client) error {
 	if cerr != nil {
 		return fmt.Errorf("meilisearch: create index %q: %w", IndexName, cerr)
 	}
-	if _, werr := c.svc.WaitForTaskWithContext(ctx, task.TaskUID, settingsTaskPoll); werr != nil {
-		return fmt.Errorf("meilisearch: wait for index-create task %d: %w", task.TaskUID, werr)
-	}
-	return nil
+	return c.awaitTask(ctx, task.TaskUID, "create index")
 }
 
 // settingsEqual is the "no-op diff" check. Meilisearch returns

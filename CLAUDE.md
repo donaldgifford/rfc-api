@@ -9,7 +9,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 - `cmd/rfc-api/` — `serve` + `work` subcommands under a small dispatcher; `version` / `help`; signal-rooted ctx; errgroup lifecycle for both servers.
 - `internal/server/` — main + admin servers, registry-driven `/api/v1/{type}/*` router with cross-type `/docs` / `/search` / `/types`, full middleware chain (OTel → recover → request-id → logger → metrics on root; timeout → CORS → rate-limit → auth-stub on v1), RFC 7807 problem+json error envelope, per-route GitHub webhook with HMAC verification.
 - `internal/domain/` — framework-agnostic `Document`, `DocumentType`, registry (prefix + id uniqueness enforced at load), `docid` pure helpers.
-- `internal/service/` — service layer. `internal/search` ships a `NoopClient` for v1; Meilisearch lands in [IMPL-0005][impl-0005].
+- `internal/service/` — service layer. `internal/search` shipped a `NoopClient` pre-IMPL-0005; the live Meili client now replaces it, with `NoopClient` kept as a test-only seam.
 - `internal/obs/` — OTel TracerProvider (OTLP/gRPC when `OTEL_EXPORTER_OTLP_ENDPOINT` is set, no-op otherwise), Prometheus registry + HTTP collectors.
 - `api/openapi.yaml` — hand-authored OAS 3.1. `test/contract/` validates every handler against it via `kin-openapi` on every CI run.
 
@@ -49,10 +49,14 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 [impl-0003]: ./docs/impl/0003-rfc-api-sync-worker-implementation.md
 [impl-0005]: ./docs/impl/0005-rfc-api-meilisearch-search-implementation.md
 
-**In progress:** [IMPL-0005][impl-0005] — Meilisearch search.
+[IMPL-0005][impl-0005] is **Completed** (2026-04-21). Meilisearch is the canonical search surface end-to-end:
 
-- Phase 1 landed: `internal/search/meilisearch/` wraps the official `meilisearch-go` SDK with `NewReadClient(cfg)` / `NewWriteClient(cfg)` that pick the right scoped key from `config.Meili`; `Probe{Client}` satisfies `server.ReadinessProbe` and is wired into `rfc-api serve` alongside the Postgres probe. `MEILI_URL` defaults to `http://localhost:7700`; `APIKey` / `WriteKey` fall back to `MasterKey` so dev stays one-knob.
-- Still open: per-index settings + per-section indexer + real `search.Client.Query` (NoopClient is still the wired client until Phase 4) + `rfc-api reindex` subcommand + Meili integration tests.
+- `internal/search/meilisearch/` — SDK wrapper (`Client`), scoped constructors (`NewReadClient` / `NewWriteClient` — APIKey / WriteKey fall back to MasterKey so dev stays one-knob), readiness probe wired into `rfc-api serve`, `ApplySettings` (idempotent; searchable + filterable + sortable + ranking-with-tiebreaker), per-section `Indexer` (H1/H2 split via goldmark AST; sub-doc id `{parent}__{slug}` — Meili rejects `#`; body_excerpt capped at 500 chars with ellipsis; delete-by-filter on `parent_id` for clean re-index), `Client.Query` (offset pagination encoded as base64(`off:N`); highlight snippets + `matched_terms`; visibility-scoped), `DistinctParentsByType` for drift comparison.
+- `internal/worker/reindex/` — `reindex` and `search_delete` job handlers. Reindex re-reads the authoritative Postgres row (graceful skip on ErrNotFound when ingest + tombstone race). Scanner's tombstone path now enqueues `search_delete` alongside the Postgres delete.
+- `cmd/rfc-api/reindex.go` — `rfc-api reindex` enumerates every document and enqueues one job per id (dedup `doc:<id>`). `--dry-run` prints the set; `--check-drift` compares Postgres vs Meili per type and exits 1 on any non-zero delta. `make reindex` wraps it.
+- `cmd/rfc-api/serve.go` — NoopClient replaced by the Meili read client; `cmd/rfc-api/work.go` builds the write-scoped Indexer and passes it to `worker.New` as `SearchIndexer`.
+- CI gained a `meilisearch:v1.11` service container on the `integration` job; `make test-integration-search` exercises the live-server path (seed → query → per-type filter → delete → drift count → settings idempotency).
+- Every Meili-task-returning call goes through `Client.awaitTask` — the SDK's bare `WaitForTask` returns a task whose `Status: "failed"` is still a "done" task, so the helper checks status + surfaces the Meili error message (invalid doc id, missing filterable attr, etc.) rather than silently succeeding.
 
 ## Local development
 
@@ -153,4 +157,5 @@ Before proposing architectural changes or writing code, check the relevant doc's
 - **Release docker job needs a `release` target in `docker-bake.hcl` + `*.output=type=registry` override.** `.github/workflows/release.yml` calls `targets: release`; without the target, bake fails immediately with `failed to find target release`. Without the `output=type=registry` override in the action's `set:` block, the build completes but nothing gets pushed (CI's `docker-build` job sets this; the release copy previously didn't). The `release` target inherits from `_common` + `docker-metadata-action` so the `docker/metadata-action`-generated bake-file tags/labels overlay correctly.
 - **`docker/metadata-action`'s `images:` must be the full image reference.** `ghcr.io/donaldgifford/` (trailing slash, no image name) silently produces malformed tags like `ghcr.io/donaldgifford/:v0.0.1`. Use `ghcr.io/donaldgifford/rfc-api`.
 - **`goreleaser archives.format` is deprecated.** v2.15+ wants `formats: ["tar.gz"]`. Migrate at the next release-config touch — current `.goreleaser.yml` still uses the singular key and emits a deprecation warning in every release run.
+- **Meilisearch document ids accept only `[a-zA-Z0-9_-]`, max 511 bytes.** Using `#` as the parent/section separator (the natural URL-fragment shape) produces task `status: "failed"` with `invalid_document_id` — but the SDK's `WaitForTask` returns a task whose terminal state is still "done," so the caller sees no Go error. Two consequences hardwired into `internal/search/meilisearch/`: (1) sub-doc ids use `{parent}__{slug}` (double underscore), (2) every write path goes through `Client.awaitTask`, which inspects `Task.Status` and surfaces `Task.Error.Message` as a wrapped error instead of silently succeeding.
 - **`GPG_PRIVATE_KEY` secret must be the secret key, not the public half.** `gpg --armor --export` gives you the public half and it imports cleanly with only `public key ... imported` in the log; goreleaser then fails signing with `gpg: No secret key`. Use `gpg --armor --export-secret-keys <fingerprint>`. The block starts with `BEGIN PGP PRIVATE KEY BLOCK`, not `PUBLIC KEY BLOCK`.

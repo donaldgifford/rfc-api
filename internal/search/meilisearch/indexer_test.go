@@ -56,8 +56,8 @@ second content.
 	}
 
 	first := got[1]
-	if first.ID != "RFC-0001#first" {
-		t.Errorf("section 1 id = %q, want RFC-0001#first", first.ID)
+	if first.ID != "RFC-0001__first" {
+		t.Errorf("section 1 id = %q, want RFC-0001__first", first.ID)
 	}
 	if first.SectionHeading != "First" || first.SectionSlug != "first" {
 		t.Errorf("section 1 heading/slug = %q/%q", first.SectionHeading, first.SectionSlug)

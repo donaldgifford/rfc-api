@@ -83,6 +83,29 @@ func (c *Client) Ping(ctx context.Context) error {
 	return nil
 }
 
+// awaitTask blocks until taskUID terminates, surfacing a failure
+// status as an error. The SDK's WaitForTask returns the Task without
+// inspecting status — a failed task is still "done" from the poll
+// loop's perspective — so callers that care about the write
+// succeeding (indexer, settings bootstrap) go through this helper.
+func (c *Client) awaitTask(ctx context.Context, taskUID int64, label string) error {
+	task, err := c.svc.WaitForTaskWithContext(ctx, taskUID, settingsTaskPoll)
+	if err != nil {
+		return fmt.Errorf("meilisearch: wait for %s task %d: %w", label, taskUID, err)
+	}
+	if task == nil {
+		return nil
+	}
+	if task.Status == meili.TaskStatusFailed || task.Status == meili.TaskStatusCanceled {
+		msg := ""
+		if task.Error.Message != "" {
+			msg = task.Error.Message
+		}
+		return fmt.Errorf("meilisearch: %s task %d %s: %s", label, taskUID, task.Status, msg)
+	}
+	return nil
+}
+
 // ErrUnavailable signals Meilisearch was not reachable or reported
 // unhealthy. Classifier-friendly: handlers wrap this into a 503 with
 // problem+json body.

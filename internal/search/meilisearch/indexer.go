@@ -4,16 +4,9 @@ import (
 	"context"
 	"fmt"
 	"strings"
-	"time"
 
 	"github.com/donaldgifford/rfc-api/internal/domain"
 )
-
-// indexTaskPoll is the per-task poll interval when a caller needs
-// synchronous write visibility (tests, reindex command). The worker
-// hot path enqueues tasks fire-and-forget; only the synchronous
-// Upsert/Delete paths wait.
-const indexTaskPoll = 50 * time.Millisecond
 
 // indexBatchSize bounds how many sub-documents a single AddDocuments
 // call ships. 1024 keeps individual payloads in the low-MB range
@@ -117,8 +110,8 @@ func (ix *Indexer) Upsert(ctx context.Context, doc *domain.Document) error {
 		if err != nil {
 			return fmt.Errorf("meilisearch: add documents: %w", err)
 		}
-		if _, err := ix.client.svc.WaitForTaskWithContext(ctx, task.TaskUID, indexTaskPoll); err != nil {
-			return fmt.Errorf("meilisearch: wait for add task %d: %w", task.TaskUID, err)
+		if err := ix.client.awaitTask(ctx, task.TaskUID, "add documents"); err != nil {
+			return err
 		}
 	}
 	return nil
@@ -137,10 +130,7 @@ func (ix *Indexer) clearParent(ctx context.Context, parentID string) error {
 	if err != nil {
 		return fmt.Errorf("meilisearch: delete by filter: %w", err)
 	}
-	if _, err := ix.client.svc.WaitForTaskWithContext(ctx, task.TaskUID, indexTaskPoll); err != nil {
-		return fmt.Errorf("meilisearch: wait for delete task %d: %w", task.TaskUID, err)
-	}
-	return nil
+	return ix.client.awaitTask(ctx, task.TaskUID, "delete by filter")
 }
 
 // buildRecords is the pure side of Upsert: doc + type → index
@@ -155,7 +145,11 @@ func buildRecords(doc *domain.Document, dt domain.DocumentType) []indexDocument 
 	for _, s := range sections {
 		id := string(doc.ID)
 		if s.Slug != "" {
-			id = string(doc.ID) + "#" + s.Slug
+			// Meili document ids reject `#` (and most punctuation) —
+			// only alphanumeric + `-` + `_` are allowed. Use `__`
+			// between parent id and section slug so a naive
+			// lexicographic sort still groups by parent.
+			id = string(doc.ID) + "__" + s.Slug
 		}
 		records = append(records, indexDocument{
 			ID:             id,
