@@ -9,7 +9,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 - `cmd/rfc-api/` — `serve` + `work` subcommands under a small dispatcher; `version` / `help`; signal-rooted ctx; errgroup lifecycle for both servers.
 - `internal/server/` — main + admin servers, registry-driven `/api/v1/{type}/*` router with cross-type `/docs` / `/search` / `/types`, full middleware chain (OTel → recover → request-id → logger → metrics on root; timeout → CORS → rate-limit → auth-stub on v1), RFC 7807 problem+json error envelope, per-route GitHub webhook with HMAC verification.
 - `internal/domain/` — framework-agnostic `Document`, `DocumentType`, registry (prefix + id uniqueness enforced at load), `docid` pure helpers.
-- `internal/service/` — service layer. `internal/search` ships a `NoopClient` for v1; Meilisearch lands later.
+- `internal/service/` — service layer. `internal/search` ships a `NoopClient` for v1; Meilisearch lands in [IMPL-0005][impl-0005].
 - `internal/obs/` — OTel TracerProvider (OTLP/gRPC when `OTEL_EXPORTER_OTLP_ENDPOINT` is set, no-op otherwise), Prometheus registry + HTTP collectors.
 - `api/openapi.yaml` — hand-authored OAS 3.1. `test/contract/` validates every handler against it via `kin-openapi` on every CI run.
 
@@ -40,12 +40,16 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 - `internal/parser/doczmarkdown/` — real parser for docz Markdown (YAML frontmatter + body). Two-pass YAML unmarshal isolates known fields vs. `Extensions` catch-all; canonical id, lifecycle validation, and structured authors all enforced. Link extraction via goldmark AST walk + regex fallback, dedup'd, with pre-computed `TargetURL`.
 - `internal/parser/testparser/` — minimal YAML-only parser for the DESIGN-0002 fake-type harness. Registers as `test-parser`, skips Markdown + link extraction, but runs the same id-shape + prefix + lifecycle checks doczmarkdown does.
 - `test/integration/faketype_test.go` — graduates DESIGN-0002's "adding a type is a config change" claim from route-mounting (in `router_test.go`) to full parse → persist → serve. Spins up a contrived `tst` type through the registry + test-parser + in-memory store + server and asserts each sub-resource endpoint returns the expected shape, plus a lifecycle-violation 400 guard.
+- **Three-tier timestamp fallback.** `domain.Source` grew a `CommitTime time.Time`; `githubsource.CommitTimeForFile` resolves the upstream author date via `ListCommits(path, sha, per_page=1)`; the ingest handler threads it through. Both parsers fall back: frontmatter `created`/`updated` → `Source.CommitTime` → `time.Now()`. Re-ingests of frontmatter-less docs now carry stable archival timestamps instead of the wall clock.
 
 [impl-0004]: ./docs/impl/0004-rfc-api-parser-plugin-seam-implementation.md
 
 [impl-0001]: ./docs/impl/0001-rfc-api-http-server-phase-1-implementation.md
 [impl-0002]: ./docs/impl/0002-rfc-api-postgresql-store-implementation.md
 [impl-0003]: ./docs/impl/0003-rfc-api-sync-worker-implementation.md
+[impl-0005]: ./docs/impl/0005-rfc-api-meilisearch-search-implementation.md
+
+**Next up:** [IMPL-0005][impl-0005] — Meilisearch search (the `reindex` job kind emitted by the ingest handler currently has no consumer; this IMPL wires the search writer + `/api/v1/search` handler).
 
 ## Local development
 
@@ -141,6 +145,7 @@ Before proposing architectural changes or writing code, check the relevant doc's
 - **`httptest.NewRequest` trips `noctx`.** Use `httptest.NewRequestWithContext(t.Context(), method, url, http.NoBody)` for test requests, and `http.NoBody` (not `nil`) for the body when there isn't one (`gocritic httpNoBody`).
 - **`kin-openapi` is strict about OAS 3.1 features.** `info.summary` is rejected ("extra sibling fields"), and `const: value` in a schema must be written as `enum: [value]`. When adding to `api/openapi.yaml`, run `go test ./test/contract/...` immediately to catch this.
 - **`goreleaser --snapshot` output goes to `dist/`.** That directory is gitignored — don't `git add -A` without checking.
+- **Integration tests that touch schema need a `TestMain` in *every* package that runs them.** `TestMain` runs per-package; one `TestMain` in `test/integration/postgres/` does not bootstrap the schema for `internal/store/postgres/*_test.go`. CI's fresh Postgres container will hit `truncate()` before the schema exists and every test fails with `relation "discussion_participants" does not exist`. Both packages need their own migrate-up hook. (Local runs pass misleadingly when the compose DB has been migrated by an earlier invocation.)
 - **`govulncheck` must be built with the same Go version as the source tree.** Version skew reports "Loading packages failed" and exits 0. If it's reporting nothing useful, `go install golang.org/x/vuln/cmd/govulncheck@latest` with the current toolchain and retry.
 - **Release docker job needs a `release` target in `docker-bake.hcl` + `*.output=type=registry` override.** `.github/workflows/release.yml` calls `targets: release`; without the target, bake fails immediately with `failed to find target release`. Without the `output=type=registry` override in the action's `set:` block, the build completes but nothing gets pushed (CI's `docker-build` job sets this; the release copy previously didn't). The `release` target inherits from `_common` + `docker-metadata-action` so the `docker/metadata-action`-generated bake-file tags/labels overlay correctly.
 - **`docker/metadata-action`'s `images:` must be the full image reference.** `ghcr.io/donaldgifford/` (trailing slash, no image name) silently produces malformed tags like `ghcr.io/donaldgifford/:v0.0.1`. Use `ghcr.io/donaldgifford/rfc-api`.
