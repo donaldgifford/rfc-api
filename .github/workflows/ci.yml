@@ -155,9 +155,23 @@ jobs:
           --health-interval 10s
           --health-timeout 5s
           --health-retries 5
+      meilisearch:
+        image: getmeili/meilisearch:v1.20
+        env:
+          MEILI_MASTER_KEY: ci-only
+          MEILI_NO_ANALYTICS: "true"
+          MEILI_ENV: development
+        ports:
+          - 7700:7700
+        options: >-
+          --health-cmd "curl -sf http://localhost:7700/health || exit 1"
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 10
     env:
       DATABASE_URL: postgres://rfcapi:rfcapi@localhost:5432/rfcapi?sslmode=disable
       RFC_API_WEBHOOK_SECRET: ci-only
+      MEILI_URL: http://localhost:7700
       MEILI_MASTER_KEY: ci-only
     steps:
       - uses: actions/checkout@v6
@@ -171,6 +185,9 @@ jobs:
       # separate migrate step is required.
       - name: Run integration tests
         run: make test-integration
+
+      - name: Run Meilisearch integration tests
+        run: make test-integration-search
 
   build:
     name: Build

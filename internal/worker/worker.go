@@ -35,27 +35,45 @@ import (
 	"github.com/donaldgifford/rfc-api/internal/worker/githubsource"
 	"github.com/donaldgifford/rfc-api/internal/worker/ingest"
 	"github.com/donaldgifford/rfc-api/internal/worker/queue"
+	"github.com/donaldgifford/rfc-api/internal/worker/reindex"
 	"github.com/donaldgifford/rfc-api/internal/worker/scanner"
 )
 
 // IngestStore is the narrow store surface the worker needs. A real
 // *postgres.Docs satisfies this; tests inject fakes. Interface lives
 // here so worker doesn't import internal/store/postgres directly.
+//
+// Get is used by the reindex handler to re-read the authoritative
+// Postgres row before re-splitting + re-writing to the search index.
 type IngestStore interface {
 	Upsert(ctx context.Context, doc *domain.Document) error
+	Get(ctx context.Context, id domain.DocumentID) (domain.Document, error)
 	ExistingSources(ctx context.Context, repo, basePath string) (map[string]string, error)
 	Delete(ctx context.Context, id domain.DocumentID) error
 	UpsertDiscussion(ctx context.Context, id domain.DocumentID, disc domain.Discussion) error
 }
 
+// SearchIndexer is the Meilisearch write surface the worker drives
+// from the reindex / search_delete handlers. Narrow on purpose so
+// tests can plug a fake in without a live Meili.
+type SearchIndexer interface {
+	Upsert(ctx context.Context, doc *domain.Document) error
+	Delete(ctx context.Context, id domain.DocumentID) error
+}
+
 // Deps are the dependencies Run consumes. Taken by pointer so the
 // caller pays a pointer cost, not a 100+ byte struct copy.
+//
+// SearchIndexer is optional — a nil value disables the reindex +
+// search_delete handlers (ingest still writes to Postgres). Dev
+// environments and Phase-1 smoke tests rely on that.
 type Deps struct {
 	Config         config.Worker
 	Registry       domain.DocumentTypeRegistry
 	Pool           *pgxpool.Pool
 	Store          IngestStore
 	Parsers        *parser.Registry
+	SearchIndexer  SearchIndexer
 	TracerProvider trace.TracerProvider
 	Metrics        *obs.Metrics
 	Logger         *slog.Logger
@@ -77,6 +95,7 @@ type Worker struct {
 	registry domain.DocumentTypeRegistry
 	store    IngestStore
 	parsers  *parser.Registry
+	indexer  SearchIndexer
 	github   *githubsource.Client
 	queue    *queue.Queue
 }
@@ -141,6 +160,7 @@ func New(deps *Deps) (*Worker, error) {
 		registry: deps.Registry,
 		store:    deps.Store,
 		parsers:  deps.Parsers,
+		indexer:  deps.SearchIndexer,
 	}
 
 	// GitHub client is only built when the worker has sources —
@@ -263,6 +283,40 @@ func (w *Worker) runProcessor(ctx context.Context) error {
 		return fmt.Errorf("discussion handler: %w", err)
 	}
 
+	kinds := map[string]queue.KindConfig{
+		ingest.Kind: {
+			Handler:     ingestHandler.Handle,
+			Concurrency: w.cfg.MaxConcurrent,
+		},
+		discussion.Kind: {
+			Handler:     discussionHandler.Handle,
+			Concurrency: w.cfg.MaxConcurrent,
+		},
+	}
+
+	// Reindex + search_delete only register when a SearchIndexer was
+	// wired. A nil indexer (dev, Phase-1 smoke) leaves the jobs
+	// queued for when a properly configured worker shows up; the
+	// queue itself applies backoff.
+	if w.indexer != nil {
+		reindexHandler, err := reindex.New(&reindex.Config{
+			Store:   w.store,
+			Indexer: w.indexer,
+			Logger:  w.logger,
+		})
+		if err != nil {
+			return fmt.Errorf("reindex handler: %w", err)
+		}
+		kinds[reindex.KindReindex] = queue.KindConfig{
+			Handler:     reindexHandler.Reindex,
+			Concurrency: w.cfg.MaxConcurrent,
+		}
+		kinds[reindex.KindSearchDelete] = queue.KindConfig{
+			Handler:     reindexHandler.Delete,
+			Concurrency: w.cfg.MaxConcurrent,
+		}
+	}
+
 	workerID := queue.WorkerID(hostname(), os.Getpid())
 	leaser, err := queue.NewLeaser(&queue.LeaserOptions{
 		Queue:    w.queue,
@@ -270,16 +324,7 @@ func (w *Worker) runProcessor(ctx context.Context) error {
 		Interval: w.cfg.ProcessorPollInterval,
 		Logger:   w.logger,
 		Metrics:  newLeaseMetrics(w.metrics),
-		Kinds: map[string]queue.KindConfig{
-			ingest.Kind: {
-				Handler:     ingestHandler.Handle,
-				Concurrency: w.cfg.MaxConcurrent,
-			},
-			discussion.Kind: {
-				Handler:     discussionHandler.Handle,
-				Concurrency: w.cfg.MaxConcurrent,
-			},
-		},
+		Kinds:    kinds,
 	})
 	if err != nil {
 		return fmt.Errorf("build leaser: %w", err)

@@ -432,4 +432,23 @@ components:
       properties:
         document: { $ref: "#/components/schemas/Document" }
         score: { type: number }
-        snippet: { type: string }
+        snippet:
+          type: string
+          description: |
+            Matched prose with highlight tags (<em>...</em>). Clients that
+            render HTML display this directly; clients that cannot render
+            HTML read matched_terms instead.
+        matched_terms:
+          type: array
+          items: { type: string }
+          description: |
+            Lower-cased dedup'd set of terms that matched this hit.
+            Provided for clients that don't render HTML (MCP tools, CLI).
+        section_heading:
+          type: string
+          description: |
+            Heading of the matched section (per-section indexing per
+            ADR-0003 #Ingest). Empty when the hit is on the head sub-doc.
+        section_slug:
+          type: string
+          description: Slugified section_heading; stable across re-indexes.

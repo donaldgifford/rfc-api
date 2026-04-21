@@ -91,9 +91,38 @@ type Database struct {
 	URL string `yaml:"url"`
 }
 
-// Meili holds the MEILI_MASTER_KEY (Meilisearch's own env var name).
+// Meili holds Meilisearch connection settings. Env-var names follow
+// Meili's own upstream shape (MEILI_*) per the DESIGN-0001 rule on
+// external deps.
+//
+// MasterKey is bootstrap-only (create keys, run reindex). In pods,
+// operators inject APIKey (read-scoped, for the API) and WriteKey
+// (write-scoped, for the worker); the master key never flows in.
+// In dev, leaving APIKey / WriteKey empty falls back to MasterKey so
+// a single `MEILI_MASTER_KEY=dev` gets both processes talking.
 type Meili struct {
+	URL       string `yaml:"url"`
 	MasterKey string `yaml:"master_key"`
+	APIKey    string `yaml:"api_key"`
+	WriteKey  string `yaml:"write_key"`
+}
+
+// ReadKey returns the key the API (read-only caller) should present to
+// Meilisearch. APIKey wins; MasterKey is the dev fallback.
+func (m Meili) ReadKey() string {
+	if m.APIKey != "" {
+		return m.APIKey
+	}
+	return m.MasterKey
+}
+
+// WriteSecret returns the key the worker (write-scoped caller) should
+// present. WriteKey wins; MasterKey is the dev fallback.
+func (m Meili) WriteSecret() string {
+	if m.WriteKey != "" {
+		return m.WriteKey
+	}
+	return m.MasterKey
 }
 
 // OTel holds OpenTelemetry settings.
@@ -192,6 +221,9 @@ func defaults() *Config {
 		OTel: OTel{
 			TraceSampleRatio: 0.1,
 		},
+		Meili: Meili{
+			URL: "http://localhost:7700",
+		},
 		Worker: Worker{
 			AdminListen:           "127.0.0.1:8082",
 			ScannerInterval:       5 * time.Minute,
@@ -269,7 +301,10 @@ func loadEnv(cfg *Config) {
 
 	// -- upstream-standard names (see DESIGN-0001 #Configuration) --
 	setString(&cfg.Database.URL, "DATABASE_URL")
+	setString(&cfg.Meili.URL, "MEILI_URL")
 	setString(&cfg.Meili.MasterKey, "MEILI_MASTER_KEY")
+	setString(&cfg.Meili.APIKey, "MEILI_API_KEY")
+	setString(&cfg.Meili.WriteKey, "MEILI_WRITE_KEY")
 	setString(&cfg.OTel.OTLPEndpoint, "OTEL_EXPORTER_OTLP_ENDPOINT")
 }
 
@@ -287,7 +322,10 @@ func loadFlags(cfg *Config, args []string) error {
 	fs.StringVar(&cfg.Log.Level, "log-level", cfg.Log.Level, "log level (debug|info|warn|error)")
 	fs.StringVar(&cfg.Log.Format, "log-format", cfg.Log.Format, "log format (json|text)")
 	fs.StringVar(&cfg.Database.URL, "database-url", cfg.Database.URL, "Postgres DSN")
-	fs.StringVar(&cfg.Meili.MasterKey, "meili-master-key", cfg.Meili.MasterKey, "Meilisearch master key")
+	fs.StringVar(&cfg.Meili.URL, "meili-url", cfg.Meili.URL, "Meilisearch base URL")
+	fs.StringVar(&cfg.Meili.MasterKey, "meili-master-key", cfg.Meili.MasterKey, "Meilisearch master key (bootstrap only)")
+	fs.StringVar(&cfg.Meili.APIKey, "meili-api-key", cfg.Meili.APIKey, "Meilisearch read-scoped API key")
+	fs.StringVar(&cfg.Meili.WriteKey, "meili-write-key", cfg.Meili.WriteKey, "Meilisearch write-scoped API key")
 	fs.StringVar(&cfg.OTel.OTLPEndpoint, "otel-endpoint", cfg.OTel.OTLPEndpoint, "OTLP collector endpoint")
 
 	if err := fs.Parse(args); err != nil {

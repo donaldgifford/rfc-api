@@ -200,6 +200,18 @@ func (s *Scanner) scanSource(ctx context.Context, src *config.SourceRepo) error 
 		}
 		if err := s.store.Delete(ctx, id); err != nil {
 			s.logger.WarnContext(ctx, "delete", "id", id, "err", err.Error())
+			continue
+		}
+		// Propagate the tombstone to the search index via a
+		// search_delete job (IMPL-0005 Phase 3). Dedup key collapses
+		// a storm of delete events for the same id onto one job.
+		if err := s.queue.Enqueue(ctx, "search_delete",
+			"search-delete:"+string(id),
+			map[string]string{"document_id": string(id)},
+			time.Time{},
+		); err != nil {
+			s.logger.WarnContext(ctx, "enqueue search_delete",
+				"id", id, "err", err.Error())
 		}
 	}
 	return nil

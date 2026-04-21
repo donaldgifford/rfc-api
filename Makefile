@@ -78,6 +78,12 @@ test-integration: ## Run integration tests (requires DATABASE_URL)
 	@test -n "$$DATABASE_URL" || { echo "DATABASE_URL is required for integration tests"; exit 2; }
 	@go test -v -race -tags=integration ./internal/store/postgres/... ./test/integration/...
 
+test-integration-search: ## Run Meilisearch integration tests (requires MEILI_URL + MEILI_MASTER_KEY)
+	@ $(MAKE) --no-print-directory log-$@
+	@test -n "$$MEILI_URL" || { echo "MEILI_URL is required"; exit 2; }
+	@test -n "$$MEILI_MASTER_KEY" || { echo "MEILI_MASTER_KEY is required"; exit 2; }
+	@go test -v -race -tags=integration ./test/integration/search/...
+
 
 ## Code Quality
 
@@ -111,6 +117,10 @@ run: build ## Build and run the CLI
 run-local: build ## Run exporter with local config
 	@ $(MAKE) --no-print-directory log-$@
 	@$(BIN_DIR)/$(PROJECT_NAME)
+
+reindex: build ## Enqueue a reindex for every document and exit
+	@ $(MAKE) --no-print-directory log-$@
+	@$(BIN_DIR)/$(PROJECT_NAME) reindex
 
 ###############
 ##@ Development Dependencies

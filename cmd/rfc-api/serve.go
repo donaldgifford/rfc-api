@@ -11,7 +11,7 @@ import (
 	"github.com/donaldgifford/rfc-api/internal/config"
 	"github.com/donaldgifford/rfc-api/internal/domain/registry"
 	"github.com/donaldgifford/rfc-api/internal/obs"
-	"github.com/donaldgifford/rfc-api/internal/search"
+	meilisearchx "github.com/donaldgifford/rfc-api/internal/search/meilisearch"
 	"github.com/donaldgifford/rfc-api/internal/server"
 	"github.com/donaldgifford/rfc-api/internal/server/handler"
 	"github.com/donaldgifford/rfc-api/internal/service"
@@ -71,7 +71,16 @@ func runServe(ctx context.Context, logger *slog.Logger, args []string) error {
 
 	docsStore := postgres.NewDocs(pool)
 	docsSvc := service.NewDocs(docsStore, reg)
-	searchSvc := service.NewSearch(search.NoopClient{}, reg)
+
+	// Meili read client is scoped to search only. Construction fails
+	// fast on a missing URL/key; runtime failures degrade /api/v1/search
+	// to 503 while the rest of the API stays up.
+	meiliClient, err := meilisearchx.NewReadClient(cfg.Meili)
+	if err != nil {
+		return fmt.Errorf("build meilisearch read client: %w", err)
+	}
+	logger.InfoContext(ctx, "meilisearch client configured", "url", meiliClient.URL())
+	searchSvc := service.NewSearch(meiliClient, reg)
 	handlers := server.Handlers{
 		Docs:   handler.NewDocs(docsSvc),
 		Search: handler.NewSearch(searchSvc),
@@ -86,7 +95,11 @@ func runServe(ctx context.Context, logger *slog.Logger, args []string) error {
 		}),
 	}
 
-	probes := []server.ReadinessProbe{server.AlwaysReady{}, postgres.Probe{Pool: pool}}
+	probes := []server.ReadinessProbe{
+		server.AlwaysReady{},
+		postgres.Probe{Pool: pool},
+		meilisearchx.Probe{Client: meiliClient},
+	}
 	metrics := obs.NewMetrics()
 
 	admin := server.NewAdmin(cfg.Admin, probes, tp.Provider(), metrics, logger)

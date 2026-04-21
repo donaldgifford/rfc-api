@@ -25,6 +25,32 @@ curl -s http://localhost:8081/healthz  # -> {"status":"ok"}
 curl -s http://localhost:8081/readyz   # 200 once Postgres probe passes
 ```
 
+## Meilisearch key provisioning
+
+In dev, `MEILI_MASTER_KEY=dev-master-key` is enough — the API and
+worker fall back to it when scoped keys are unset. In production, the
+master key never flows into running pods. Provision scoped keys once
+with the master key and inject them separately:
+
+```sh
+# create the read-only key used by the API
+curl -X POST "$MEILI_URL/keys" \
+  -H "Authorization: Bearer $MEILI_MASTER_KEY" \
+  -H "Content-Type: application/json" \
+  -d '{"name":"rfc-api-read","actions":["search"],"indexes":["documents"],"expiresAt":null}'
+
+# create the write key used by the worker
+curl -X POST "$MEILI_URL/keys" \
+  -H "Authorization: Bearer $MEILI_MASTER_KEY" \
+  -H "Content-Type: application/json" \
+  -d '{"name":"rfc-api-write","actions":["documents.*","indexes.*","settings.*"],"indexes":["documents"],"expiresAt":null}'
+```
+
+Feed the resulting `key` values to `MEILI_API_KEY` (API pods) and
+`MEILI_WRITE_KEY` (worker pods). They are long-lived; rotate only on
+secret changes. RFC-0001 Phase 4 OIDC will reshape auth and subsume
+this pattern.
+
 ## Compose profiles
 
 `compose.yaml` splits services into profiles so you only bring up what you

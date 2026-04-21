@@ -1,17 +1,18 @@
 ---
 id: IMPL-0005
 title: "rfc-api Meilisearch search implementation"
-status: Draft
+status: Completed
 author: Donald Gifford
 created: 2026-04-20
+updated: 2026-04-21
 ---
 <!-- markdownlint-disable-file MD025 MD041 -->
 
 # IMPL 0005: rfc-api Meilisearch search implementation
 
-**Status:** Draft
+**Status:** Completed
 **Author:** Donald Gifford
-**Date:** 2026-04-20
+**Date:** 2026-04-21
 
 <!--toc:start-->
 - [Objective](#objective)
@@ -97,26 +98,31 @@ Wire the Meili SDK into both processes with correctly scoped credentials.
 
 #### Tasks
 
-- [ ] Pick the SDK (default: `github.com/meilisearch/meilisearch-go`,
-      the official client).
-- [ ] `internal/config/config.go`: add `Meili` struct with `URL string`
+- [x] Pick the SDK (default: `github.com/meilisearch/meilisearch-go`,
+      the official client). Pulled in at v0.36.2.
+- [x] `internal/config/config.go`: add `Meili` struct with `URL string`
       (upstream-standard: `MEILI_URL`), `MasterKey string`
       (`MEILI_MASTER_KEY`, already reserved), `APIKey string`
       (`MEILI_API_KEY` — read-scoped for the API), `WriteKey string`
       (`MEILI_WRITE_KEY` — scoped for the worker). Env-var naming follows
       the memory rule (upstream name unchanged for external deps).
-- [ ] `internal/search/meilisearch/client.go`: `Client{c *meilisearch.
+      `ReadKey()` / `WriteSecret()` helpers fall back to MasterKey when
+      explicit keys are unset (dev single-knob pattern).
+- [x] `internal/search/meilisearch/client.go`: `Client{c *meilisearch.
       Client}`. Constructors `NewReadClient(cfg)` and `NewWriteClient(cfg)`
-      that pick the right key.
-- [ ] Key provisioning: at operator bootstrap (documented in `docs/local-
-      dev.md`), use the master key once to create a read-only key (actions:
-      `search`) and a write key (actions: `documents.*`, `indexes.*`,
-      `settings.*`). Keys are secrets; master key never flows to running
-      pods.
-- [ ] Health probe on the API: `ReadinessProbe` pinging `/health`
+      that pick the right key. Ping() wraps HealthWithContext; 5s default
+      HTTP timeout.
+- [x] Key provisioning: at operator bootstrap (documented in `docs/local-
+      dev.md` #Meilisearch key provisioning), use the master key once to
+      create a read-only key (actions: `search`) and a write key (actions:
+      `documents.*`, `indexes.*`, `settings.*`). Keys are secrets; master
+      key never flows to running pods.
+- [x] Health probe on the API: `ReadinessProbe` pinging `/health`
       endpoint. Logs degradation; readiness drops on failure but does not
       take the main API down — search failures degrade to 503 from the
-      search endpoint only.
+      search endpoint only. Probe lives in
+      `internal/search/meilisearch/probe.go`, wired in serve.go alongside
+      the Postgres probe.
 
 #### Success Criteria
 
@@ -135,24 +141,30 @@ read surface.
 
 #### Tasks
 
-- [ ] Single index `documents` per OQ1; every indexed record has a `type`
-      attribute for filtering.
-- [ ] Settings bootstrap (idempotent): `searchableAttributes`: `title`,
+- [x] Single index `documents` per OQ1; every indexed record has a `type`
+      attribute for filtering. `IndexName = "documents"` lives in
+      `internal/search/meilisearch/client.go`.
+- [x] Settings bootstrap (idempotent): `searchableAttributes`: `title`,
       `section_heading`, `body_excerpt`; `filterableAttributes`: `type`,
       `status`, `labels`, `author_handles`, `visibility`;
       `sortableAttributes`: `created_at`, `updated_at`;
       `rankingRules`: defaults + `created_at:desc` near the bottom as a
       tiebreaker; `typoTolerance`: on; `displayedAttributes`: all.
-- [ ] Extensions flattening: each key `k` in `document.extensions`
-      becomes an indexed field `ext.<type_prefix>.<k>` (lowercased). Makes
-      per-type filtered search cheap without leaking type-specific schema
-      into the core.
-- [ ] Internal-network-only visibility flag: every indexed document gets
-      `visibility: "internal"` until RFC-0001 Phase 4 hooks it to the
+      Declared in `DesiredSettings()` — `settings.go`.
+- [x] Extensions flattening: each key `k` in `document.extensions`
+      becomes an indexed field `ext_<type_prefix>_<k>` (lowercased,
+      underscore delimiters — Meili attribute name rules reject dots).
+      Implemented in the Phase 3 indexer's `flattenExtensions` helper.
+- [x] Internal-network-only visibility flag: every indexed sub-doc
+      carries `visibility: "internal"`; every search query filters on
+      it. Constant `visibilityInternal` in `indexer.go` is the single
+      source of truth until RFC-0001 Phase 4 hooks visibility to the
       authenticated caller's scopes.
-- [ ] Settings migration: a small `ApplySettings()` routine idempotent
+- [x] Settings migration: a small `ApplySettings()` routine idempotent
       against re-invocation; called on first worker start per
-      [IMPL-0003][impl-0003] Phase 4 bootstrap path.
+      [IMPL-0003][impl-0003] Phase 4 bootstrap path. Compares desired vs.
+      current as sorted sets (ranking rules as ordered list) so restarts
+      don't churn the server.
 
 #### Success Criteria
 
@@ -172,22 +184,30 @@ whole docs.
 
 #### Tasks
 
-- [ ] `internal/search/meilisearch/indexer.go`: `Indexer{client}` with
-      `Upsert(ctx, docs []domain.Document) error` and `Delete(ctx, id
-      domain.DocumentID) error`.
-- [ ] Per-section split: walk the Markdown AST (reusing goldmark from
+- [x] `internal/search/meilisearch/indexer.go`: `Indexer{client,types}` with
+      `Upsert(ctx, doc *domain.Document)` (single doc — ingest path) and
+      `Delete(ctx, id domain.DocumentID)`. Upsert is delete-by-filter +
+      re-add so a section lost between ingests leaves no orphan.
+- [x] Per-section split: walk the Markdown AST (reusing goldmark from
       [IMPL-0004][impl-0004]), split into sub-documents at H1/H2
       boundaries (see OQ2 on depth). Each sub-doc's indexed id is
       `{document_id}#{section_slug}`; `parent_id` is the document id;
       `section_heading` carries the heading text; `body_excerpt` carries
-      the prose under that heading up to ~500 chars.
-- [ ] Batched writes: Meili's bulk API handles up to 10k docs per call
-      comfortably; batch appropriately.
-- [ ] `reindex` job kind (enqueued by IMPL-0003 Phase 4 on every upsert)
-      triggers the `Upsert` path; the worker consumes it.
-- [ ] Deletion propagation: IMPL-0003 Phase 4's tombstone path enqueues
-      a `search_delete` job which calls `Indexer.Delete` with the parent
-      id and clears every sub-section.
+      the prose under that heading up to ~500 chars. Extensions flatten
+      as `ext_<prefix>_<key>`; every record carries `visibility: internal`
+      per ADR-0003. `parent_id` added to filterableAttributes so
+      delete-by-filter clears all sub-sections.
+- [x] Batched writes: `indexBatchSize = 1024` keeps individual payloads
+      in the low-MB range while letting a reindex drive Meili's task
+      queue near its practical ceiling.
+- [x] `reindex` job kind (enqueued by IMPL-0003 Phase 4 on every upsert)
+      triggers the `Upsert` path; the worker consumes it. Handler lives
+      in `internal/worker/reindex/reindex.go`; re-reads the source-of-
+      truth Postgres row before re-indexing so the jobs table stores
+      nothing larger than a document id.
+- [x] Deletion propagation: scanner's tombstone path now enqueues a
+      `search_delete` job (dedup `search-delete:<id>`); handler calls
+      `Indexer.Delete` with the parent id and clears every sub-section.
 
 #### Success Criteria
 
@@ -206,22 +226,24 @@ Replace the noop with real hits.
 
 #### Tasks
 
-- [ ] `internal/search/search.go`: `Client` interface (already exists for
-      the noop); tighten / expand as needed — the current surface is
-      minimal; see OQ3 on facet returns.
-- [ ] `internal/search/meilisearch/client.go`: implement `Query(ctx,
-      SearchQuery) (SearchResults, error)`. Honors `q`, `limit`, `cursor`
-      (see OQ4 on cursor shape — Meili uses offset pagination), and
-      `type` filter when present.
-- [ ] Translate highlights back into a client-visible shape: each hit
-      carries `matched_terms` + rendered `highlight` snippets for
-      `title` + `body_excerpt`.
-- [ ] Update `internal/service/search.go` to plumb the typed
-      `SearchQuery` through; no handler changes (they read
-      `routectx`/`r.Query` the same way).
-- [ ] Update the contract test to reflect the real search response
+- [x] `internal/search/search.go`: `Client` interface extended with
+      `MatchedTerms`, `SectionHeading`, `SectionSlug` on `Result` per
+      RD7. The NoopClient is retained for test harnesses.
+- [x] `internal/search/meilisearch/query.go`: `Client.Query` honors
+      `q`, `limit`, `cursor` (offset encoded as `base64(off:N)` per
+      RD4), and the `type` filter when present. Always AND-constrains
+      `visibility = "internal"` on the filter.
+- [x] Translate highlights back into a client-visible shape: each hit
+      carries `matched_terms` (dedup'd, lowercased) + rendered
+      `<em>`-tagged snippet preferring `body_excerpt` > `title` >
+      `section_heading`.
+- [x] `internal/service/search.go` already plumbs `search.Query`
+      through unchanged; swapping NoopClient → meilisearch.Client in
+      `cmd/rfc-api/serve.go` was the wiring change.
+- [x] Update the contract test to reflect the real search response
       shape; keep it behind the `search` tag so old consumers (MCP
-      tool) see the new fields additively.
+      tool) see the new fields additively. SearchResult now documents
+      `snippet`, `matched_terms`, `section_heading`, `section_slug`.
 
 #### Success Criteria
 
@@ -242,17 +264,22 @@ a settings change or index loss.
 
 #### Tasks
 
-- [ ] `rfc-api reindex` subcommand: iterates `documents` in Postgres,
-      enqueues `reindex` jobs. Worker drains them through the Phase-3
-      indexer.
-- [ ] Online-safe: the running index keeps serving while rebuild
-      happens; batched writes don't take a settings lock.
+- [x] `rfc-api reindex` subcommand: iterates `documents` in Postgres,
+      enqueues `reindex` jobs with dedup key `doc:<id>`. `--dry-run`
+      prints the id set without writing; the worker drains jobs through
+      the Phase-3 indexer.
+- [x] Online-safe: upsert-by-id keeps the running index serving while
+      rebuild happens; batched writes don't take a settings lock (RD5).
 - [ ] Alternative (fully online swap): index into `documents_v2`,
-      flip Meili alias to `documents`, delete the old — tracked in OQ5.
-- [ ] Reconciliation: a scheduled job (or scanner extension) detects
-      drift by counting rows in Postgres vs hits in Meili per type,
-      re-enqueues missing ones. Log + emit a metric when drift > 0.
-- [ ] `Makefile` target `make reindex` for local convenience.
+      flip Meili alias to `documents`, delete the old — deferred per
+      RD5; revisit when in-place reindex starts pinching serve latency.
+- [x] Reconciliation: `rfc-api reindex --check-drift` compares
+      `postgres.Docs.CountByType` against Meili's distinct parent-id
+      count per type (via `distinct: parent_id` search). Non-zero
+      deltas log + exit 1 so an ops wrapper can gate on the signal.
+      Emitting a continuous Prometheus gauge is deferred to a follow-
+      up; the one-shot check is enough for manual reconciliation.
+- [x] `Makefile` target `make reindex` for local convenience.
 
 #### Success Criteria
 
@@ -284,14 +311,17 @@ a settings change or index loss.
 ## Testing Plan
 
 - **Unit** — query DSL translation, settings idempotency, section split
-  correctness, extension key flattening.
-- **Integration** — testcontainers-go with `meilisearch:v1`; seed a
-  small corpus, exercise query variants, highlight rendering, filter
-  combinations.
+  correctness, extension key flattening. All landed in
+  `internal/search/meilisearch/*_test.go`.
+- **Integration** — live Meilisearch via GitHub Actions service
+  container (pinned `getmeili/meilisearch:v1.11`). `test/integration/
+  search/` seeds a two-doc corpus and exercises query / per-type
+  filter / delete-clears-sections / settings-idempotency /
+  distinct-parent-count. Runs via `make test-integration-search`.
 - **Contract** — existing `test/contract/` suite stays green after
   response-shape changes; new fields added additively.
-- **Soak** — extend `make smoke-soak` with search queries against a
-  seeded corpus; assert stable latency + no goroutine growth.
+- **Soak** — `make smoke-soak` extension deferred; the current suite
+  exercises the serve path without search queries.
 
 ## Dependencies
 

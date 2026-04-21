@@ -12,6 +12,7 @@ import (
 	"github.com/donaldgifford/rfc-api/internal/obs"
 	"github.com/donaldgifford/rfc-api/internal/parser"
 	_ "github.com/donaldgifford/rfc-api/internal/parser/doczmarkdown" // register docz-markdown
+	meilisearchx "github.com/donaldgifford/rfc-api/internal/search/meilisearch"
 	"github.com/donaldgifford/rfc-api/internal/store/postgres"
 	"github.com/donaldgifford/rfc-api/internal/worker"
 )
@@ -65,12 +66,36 @@ func runWork(ctx context.Context, logger *slog.Logger, args []string) error {
 		return fmt.Errorf("build document-type registry: %w", err)
 	}
 
+	// Bootstrap the Meili index + settings. Idempotent: the first
+	// worker after a fresh deploy creates the index; subsequent
+	// restarts are a no-op if the settings haven't drifted.
+	// A Meili outage at boot is a warning — the ingest pipeline can
+	// still write to Postgres; reindex jobs will block until Meili
+	// comes back. We fail-soft rather than fail-fast to avoid a
+	// crashloop tied to an unrelated service.
+	meiliWrite, err := meilisearchx.NewWriteClient(cfg.Meili)
+	if err != nil {
+		return fmt.Errorf("build meilisearch write client: %w", err)
+	}
+	if err := meilisearchx.ApplySettings(ctx, meiliWrite); err != nil {
+		logger.WarnContext(ctx, "meilisearch settings bootstrap failed; ingest-time reindex will retry",
+			"url", meiliWrite.URL(), "err", err.Error())
+	} else {
+		logger.InfoContext(ctx, "meilisearch index settings applied", "url", meiliWrite.URL())
+	}
+
+	indexer, err := meilisearchx.NewIndexer(meiliWrite, reg)
+	if err != nil {
+		return fmt.Errorf("build meilisearch indexer: %w", err)
+	}
+
 	w, err := worker.New(&worker.Deps{
 		Config:         cfg.Worker,
 		Registry:       reg,
 		Pool:           pool,
 		Store:          postgres.NewDocs(pool),
 		Parsers:        parser.Default,
+		SearchIndexer:  indexer,
 		TracerProvider: tp.Provider(),
 		Metrics:        obs.NewMetrics(),
 		Logger:         logger,
