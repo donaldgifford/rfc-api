@@ -198,11 +198,14 @@ whole docs.
 - [x] Batched writes: `indexBatchSize = 1024` keeps individual payloads
       in the low-MB range while letting a reindex drive Meili's task
       queue near its practical ceiling.
-- [ ] `reindex` job kind (enqueued by IMPL-0003 Phase 4 on every upsert)
-      triggers the `Upsert` path; the worker consumes it.
-- [ ] Deletion propagation: IMPL-0003 Phase 4's tombstone path enqueues
-      a `search_delete` job which calls `Indexer.Delete` with the parent
-      id and clears every sub-section.
+- [x] `reindex` job kind (enqueued by IMPL-0003 Phase 4 on every upsert)
+      triggers the `Upsert` path; the worker consumes it. Handler lives
+      in `internal/worker/reindex/reindex.go`; re-reads the source-of-
+      truth Postgres row before re-indexing so the jobs table stores
+      nothing larger than a document id.
+- [x] Deletion propagation: scanner's tombstone path now enqueues a
+      `search_delete` job (dedup `search-delete:<id>`); handler calls
+      `Indexer.Delete` with the parent id and clears every sub-section.
 
 #### Success Criteria
 

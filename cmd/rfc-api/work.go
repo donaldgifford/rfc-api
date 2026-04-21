@@ -84,12 +84,18 @@ func runWork(ctx context.Context, logger *slog.Logger, args []string) error {
 		logger.InfoContext(ctx, "meilisearch index settings applied", "url", meiliWrite.URL())
 	}
 
+	indexer, err := meilisearchx.NewIndexer(meiliWrite, reg)
+	if err != nil {
+		return fmt.Errorf("build meilisearch indexer: %w", err)
+	}
+
 	w, err := worker.New(&worker.Deps{
 		Config:         cfg.Worker,
 		Registry:       reg,
 		Pool:           pool,
 		Store:          postgres.NewDocs(pool),
 		Parsers:        parser.Default,
+		SearchIndexer:  indexer,
 		TracerProvider: tp.Provider(),
 		Metrics:        obs.NewMetrics(),
 		Logger:         logger,
