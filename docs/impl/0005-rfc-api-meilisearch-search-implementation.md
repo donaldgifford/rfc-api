@@ -140,24 +140,29 @@ read surface.
 
 #### Tasks
 
-- [ ] Single index `documents` per OQ1; every indexed record has a `type`
-      attribute for filtering.
-- [ ] Settings bootstrap (idempotent): `searchableAttributes`: `title`,
+- [x] Single index `documents` per OQ1; every indexed record has a `type`
+      attribute for filtering. `IndexName = "documents"` lives in
+      `internal/search/meilisearch/client.go`.
+- [x] Settings bootstrap (idempotent): `searchableAttributes`: `title`,
       `section_heading`, `body_excerpt`; `filterableAttributes`: `type`,
       `status`, `labels`, `author_handles`, `visibility`;
       `sortableAttributes`: `created_at`, `updated_at`;
       `rankingRules`: defaults + `created_at:desc` near the bottom as a
       tiebreaker; `typoTolerance`: on; `displayedAttributes`: all.
+      Declared in `DesiredSettings()` — `settings.go`.
 - [ ] Extensions flattening: each key `k` in `document.extensions`
       becomes an indexed field `ext.<type_prefix>.<k>` (lowercased). Makes
       per-type filtered search cheap without leaking type-specific schema
-      into the core.
+      into the core. *Deferred to Phase 3 indexer (per-doc field shape).*
 - [ ] Internal-network-only visibility flag: every indexed document gets
       `visibility: "internal"` until RFC-0001 Phase 4 hooks it to the
-      authenticated caller's scopes.
-- [ ] Settings migration: a small `ApplySettings()` routine idempotent
+      authenticated caller's scopes. *Filterable attr is declared; the
+      per-doc write happens in Phase 3 indexer.*
+- [x] Settings migration: a small `ApplySettings()` routine idempotent
       against re-invocation; called on first worker start per
-      [IMPL-0003][impl-0003] Phase 4 bootstrap path.
+      [IMPL-0003][impl-0003] Phase 4 bootstrap path. Compares desired vs.
+      current as sorted sets (ranking rules as ordered list) so restarts
+      don't churn the server.
 
 #### Success Criteria
 
