@@ -151,14 +151,15 @@ read surface.
       `rankingRules`: defaults + `created_at:desc` near the bottom as a
       tiebreaker; `typoTolerance`: on; `displayedAttributes`: all.
       Declared in `DesiredSettings()` — `settings.go`.
-- [ ] Extensions flattening: each key `k` in `document.extensions`
-      becomes an indexed field `ext.<type_prefix>.<k>` (lowercased). Makes
-      per-type filtered search cheap without leaking type-specific schema
-      into the core. *Deferred to Phase 3 indexer (per-doc field shape).*
-- [ ] Internal-network-only visibility flag: every indexed document gets
-      `visibility: "internal"` until RFC-0001 Phase 4 hooks it to the
-      authenticated caller's scopes. *Filterable attr is declared; the
-      per-doc write happens in Phase 3 indexer.*
+- [x] Extensions flattening: each key `k` in `document.extensions`
+      becomes an indexed field `ext_<type_prefix>_<k>` (lowercased,
+      underscore delimiters — Meili attribute name rules reject dots).
+      Implemented in the Phase 3 indexer's `flattenExtensions` helper.
+- [x] Internal-network-only visibility flag: every indexed sub-doc
+      carries `visibility: "internal"`; every search query filters on
+      it. Constant `visibilityInternal` in `indexer.go` is the single
+      source of truth until RFC-0001 Phase 4 hooks visibility to the
+      authenticated caller's scopes.
 - [x] Settings migration: a small `ApplySettings()` routine idempotent
       against re-invocation; called on first worker start per
       [IMPL-0003][impl-0003] Phase 4 bootstrap path. Compares desired vs.
