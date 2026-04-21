@@ -238,9 +238,10 @@ Replace the noop with real hits.
 - [x] `internal/service/search.go` already plumbs `search.Query`
       through unchanged; swapping NoopClient → meilisearch.Client in
       `cmd/rfc-api/serve.go` was the wiring change.
-- [ ] Update the contract test to reflect the real search response
+- [x] Update the contract test to reflect the real search response
       shape; keep it behind the `search` tag so old consumers (MCP
-      tool) see the new fields additively.
+      tool) see the new fields additively. SearchResult now documents
+      `snippet`, `matched_terms`, `section_heading`, `section_slug`.
 
 #### Success Criteria
 
