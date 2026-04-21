@@ -112,6 +112,10 @@ run-local: build ## Run exporter with local config
 	@ $(MAKE) --no-print-directory log-$@
 	@$(BIN_DIR)/$(PROJECT_NAME)
 
+reindex: build ## Enqueue a reindex for every document and exit
+	@ $(MAKE) --no-print-directory log-$@
+	@$(BIN_DIR)/$(PROJECT_NAME) reindex
+
 ###############
 ##@ Development Dependencies
 

@@ -92,6 +92,61 @@ func (d *Docs) List(ctx context.Context, q store.ListQuery) (store.Page, error) 
 	return page, nil
 }
 
+// CountByType returns the number of documents per type id. Used by
+// the reindex drift check to compare Postgres against Meili's parent-
+// id distribution.
+func (d *Docs) CountByType(ctx context.Context) (map[string]int, error) {
+	rows, err := d.pool.Query(ctx,
+		`SELECT type, count(*) FROM documents GROUP BY type`)
+	if err != nil {
+		return nil, upstream("query count by type", err)
+	}
+	defer rows.Close()
+
+	out := make(map[string]int)
+	for rows.Next() {
+		var (
+			t string
+			n int
+		)
+		if err := rows.Scan(&t, &n); err != nil {
+			return nil, upstream("scan count row", err)
+		}
+		out[t] = n
+	}
+	if err := rows.Err(); err != nil {
+		return nil, upstream("iterate count rows", err)
+	}
+	return out, nil
+}
+
+// AllIDs returns every document id in the store, ordered for a stable
+// reindex pass. Callers (rfc-api reindex) fan these out into `reindex`
+// jobs so the worker rebuilds the search index from authoritative
+// Postgres state. The v1 corpus fits comfortably in memory — no
+// pagination here.
+func (d *Docs) AllIDs(ctx context.Context) ([]domain.DocumentID, error) {
+	rows, err := d.pool.Query(ctx,
+		`SELECT id FROM documents ORDER BY created_at ASC, id ASC`)
+	if err != nil {
+		return nil, upstream("query all ids", err)
+	}
+	defer rows.Close()
+
+	var out []domain.DocumentID
+	for rows.Next() {
+		var id string
+		if err := rows.Scan(&id); err != nil {
+			return nil, upstream("scan id row", err)
+		}
+		out = append(out, domain.DocumentID(id))
+	}
+	if err := rows.Err(); err != nil {
+		return nil, upstream("iterate id rows", err)
+	}
+	return out, nil
+}
+
 // Links returns both outgoing edges (this doc → others) and incoming
 // edges (others → this doc). Incoming edges are discovered by scanning
 // the links table for target_id = id.

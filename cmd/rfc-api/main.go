@@ -5,6 +5,7 @@
 //	rfc-api serve   start the HTTP server (main + admin ports)
 //	rfc-api work    start the sync worker (stub in v1)
 //	rfc-api migrate apply pending database migrations and exit
+//	rfc-api reindex enqueue a reindex job for every document and exit
 //	rfc-api version print version and commit
 //	rfc-api help    show usage
 //
@@ -85,6 +86,8 @@ func run(args []string) int {
 		err = runWork(ctx, logger, rest)
 	case "migrate":
 		err = runMigrate(ctx, logger, rest)
+	case "reindex":
+		err = runReindex(ctx, logger, rest)
 	default:
 		fmt.Fprintf(os.Stderr, "unknown command %q\n\n", cmd)
 		printUsage()
@@ -119,6 +122,7 @@ Commands:
   serve     start the HTTP server (main + admin ports)
   work      start the sync worker (stub; logs and blocks on ctx in v1)
   migrate   apply pending database migrations and exit
+  reindex   enqueue a reindex job for every document and exit
   version   print version and commit
   help      show this message
 

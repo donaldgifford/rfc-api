@@ -262,17 +262,22 @@ a settings change or index loss.
 
 #### Tasks
 
-- [ ] `rfc-api reindex` subcommand: iterates `documents` in Postgres,
-      enqueues `reindex` jobs. Worker drains them through the Phase-3
-      indexer.
-- [ ] Online-safe: the running index keeps serving while rebuild
-      happens; batched writes don't take a settings lock.
+- [x] `rfc-api reindex` subcommand: iterates `documents` in Postgres,
+      enqueues `reindex` jobs with dedup key `doc:<id>`. `--dry-run`
+      prints the id set without writing; the worker drains jobs through
+      the Phase-3 indexer.
+- [x] Online-safe: upsert-by-id keeps the running index serving while
+      rebuild happens; batched writes don't take a settings lock (RD5).
 - [ ] Alternative (fully online swap): index into `documents_v2`,
-      flip Meili alias to `documents`, delete the old — tracked in OQ5.
-- [ ] Reconciliation: a scheduled job (or scanner extension) detects
-      drift by counting rows in Postgres vs hits in Meili per type,
-      re-enqueues missing ones. Log + emit a metric when drift > 0.
-- [ ] `Makefile` target `make reindex` for local convenience.
+      flip Meili alias to `documents`, delete the old — deferred per
+      RD5; revisit when in-place reindex starts pinching serve latency.
+- [x] Reconciliation: `rfc-api reindex --check-drift` compares
+      `postgres.Docs.CountByType` against Meili's distinct parent-id
+      count per type (via `distinct: parent_id` search). Non-zero
+      deltas log + exit 1 so an ops wrapper can gate on the signal.
+      Emitting a continuous Prometheus gauge is deferred to a follow-
+      up; the one-shot check is enough for manual reconciliation.
+- [x] `Makefile` target `make reindex` for local convenience.
 
 #### Success Criteria
 
