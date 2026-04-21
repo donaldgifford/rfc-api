@@ -3,6 +3,9 @@
 Runbook for working on `rfc-api` on a developer machine. The short version:
 install toolchain, copy env, bring up deps, run binary.
 
+For the higher-level setup + requirements overview, see
+[`README.md`](./README.md) in this directory.
+
 ## One-command getting started
 
 ```sh

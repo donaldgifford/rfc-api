@@ -12,7 +12,7 @@
 # Other profiles: auth, tracing, metrics, logs. See Makefile compose-*
 # targets for common combinations.
 #
-# See docs/local-dev.md and docs/impl/0001-*.md #Prerequisites for the full
+# See docs/development/local-dev.md and docs/impl/0001-*.md #Prerequisites for the full
 # port map and rationale.
 
 name: rfc-api
