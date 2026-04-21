@@ -224,19 +224,20 @@ Replace the noop with real hits.
 
 #### Tasks
 
-- [ ] `internal/search/search.go`: `Client` interface (already exists for
-      the noop); tighten / expand as needed — the current surface is
-      minimal; see OQ3 on facet returns.
-- [ ] `internal/search/meilisearch/client.go`: implement `Query(ctx,
-      SearchQuery) (SearchResults, error)`. Honors `q`, `limit`, `cursor`
-      (see OQ4 on cursor shape — Meili uses offset pagination), and
-      `type` filter when present.
-- [ ] Translate highlights back into a client-visible shape: each hit
-      carries `matched_terms` + rendered `highlight` snippets for
-      `title` + `body_excerpt`.
-- [ ] Update `internal/service/search.go` to plumb the typed
-      `SearchQuery` through; no handler changes (they read
-      `routectx`/`r.Query` the same way).
+- [x] `internal/search/search.go`: `Client` interface extended with
+      `MatchedTerms`, `SectionHeading`, `SectionSlug` on `Result` per
+      RD7. The NoopClient is retained for test harnesses.
+- [x] `internal/search/meilisearch/query.go`: `Client.Query` honors
+      `q`, `limit`, `cursor` (offset encoded as `base64(off:N)` per
+      RD4), and the `type` filter when present. Always AND-constrains
+      `visibility = "internal"` on the filter.
+- [x] Translate highlights back into a client-visible shape: each hit
+      carries `matched_terms` (dedup'd, lowercased) + rendered
+      `<em>`-tagged snippet preferring `body_excerpt` > `title` >
+      `section_heading`.
+- [x] `internal/service/search.go` already plumbs `search.Query`
+      through unchanged; swapping NoopClient → meilisearch.Client in
+      `cmd/rfc-api/serve.go` was the wiring change.
 - [ ] Update the contract test to reflect the real search response
       shape; keep it behind the `search` tag so old consumers (MCP
       tool) see the new fields additively.

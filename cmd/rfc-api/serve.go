@@ -11,7 +11,6 @@ import (
 	"github.com/donaldgifford/rfc-api/internal/config"
 	"github.com/donaldgifford/rfc-api/internal/domain/registry"
 	"github.com/donaldgifford/rfc-api/internal/obs"
-	"github.com/donaldgifford/rfc-api/internal/search"
 	meilisearchx "github.com/donaldgifford/rfc-api/internal/search/meilisearch"
 	"github.com/donaldgifford/rfc-api/internal/server"
 	"github.com/donaldgifford/rfc-api/internal/server/handler"
@@ -81,7 +80,7 @@ func runServe(ctx context.Context, logger *slog.Logger, args []string) error {
 		return fmt.Errorf("build meilisearch read client: %w", err)
 	}
 	logger.InfoContext(ctx, "meilisearch client configured", "url", meiliClient.URL())
-	searchSvc := service.NewSearch(search.NoopClient{}, reg)
+	searchSvc := service.NewSearch(meiliClient, reg)
 	handlers := server.Handlers{
 		Docs:   handler.NewDocs(docsSvc),
 		Search: handler.NewSearch(searchSvc),
