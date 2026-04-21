@@ -85,11 +85,20 @@ func (Parser) Parse(raw []byte, t domain.DocumentType, src domain.Source) (domai
 			domain.ErrInvalidInput, d.Status, t.ID)
 	}
 
+	// Same fallback order as doczmarkdown: frontmatter → commit time
+	// from the Source → time.Now(). Keeps the test-parser behavior
+	// aligned with the production parser for the fake-type harness.
 	created := d.Created
+	if created.IsZero() {
+		created = src.CommitTime
+	}
 	if created.IsZero() {
 		created = time.Now().UTC()
 	}
 	updated := d.Updated
+	if updated.IsZero() {
+		updated = src.CommitTime
+	}
 	if updated.IsZero() {
 		updated = created
 	}

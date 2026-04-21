@@ -186,3 +186,51 @@ func TestParse_RealRepoDoc_RFC0001(t *testing.T) {
 		t.Errorf("real doc parsed with empty title")
 	}
 }
+
+func TestParse_CommitTimeFallback(t *testing.T) {
+	// Frontmatter without created/updated: parser should prefer
+	// Source.CommitTime over time.Now() when the caller (the worker)
+	// supplies one.
+	commitTime := time.Date(2024, 3, 14, 15, 9, 26, 0, time.UTC)
+	raw := []byte(`---
+id: RFC-0001
+title: x
+status: Draft
+---
+body`)
+	s := src()
+	s.CommitTime = commitTime
+	doc, err := doczmarkdown.Parser{}.Parse(raw, rfcType(), s)
+	if err != nil {
+		t.Fatalf("Parse: %v", err)
+	}
+	if !doc.CreatedAt.Equal(commitTime) {
+		t.Errorf("CreatedAt = %v, want %v", doc.CreatedAt, commitTime)
+	}
+	if !doc.UpdatedAt.Equal(commitTime) {
+		t.Errorf("UpdatedAt = %v, want %v", doc.UpdatedAt, commitTime)
+	}
+}
+
+func TestParse_FrontmatterWinsOverCommitTime(t *testing.T) {
+	// Frontmatter created/updated must still win over Source.CommitTime
+	// so an author's explicit date is not silently overwritten.
+	frontmatterDate := time.Date(2020, 1, 1, 0, 0, 0, 0, time.UTC)
+	commitTime := time.Date(2024, 3, 14, 15, 9, 26, 0, time.UTC)
+	raw := []byte(`---
+id: RFC-0001
+title: x
+status: Draft
+created: 2020-01-01T00:00:00Z
+---
+body`)
+	s := src()
+	s.CommitTime = commitTime
+	doc, err := doczmarkdown.Parser{}.Parse(raw, rfcType(), s)
+	if err != nil {
+		t.Fatalf("Parse: %v", err)
+	}
+	if !doc.CreatedAt.Equal(frontmatterDate) {
+		t.Errorf("CreatedAt = %v, want frontmatter %v", doc.CreatedAt, frontmatterDate)
+	}
+}

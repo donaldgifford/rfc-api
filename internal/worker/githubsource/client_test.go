@@ -175,6 +175,42 @@ func TestListPullRequestComments_CombinesIssueAndReview(t *testing.T) {
 	}
 }
 
+func TestCommitTimeForFile_ReturnsAuthorDate(t *testing.T) {
+	body := `[
+		{"commit":{"author":{"date":"2024-03-14T15:09:26Z"}}}
+	]`
+	client := fakeGitHub(t, map[string]http.HandlerFunc{
+		"/api/v3/repos/owner/repo/commits": func(w http.ResponseWriter, _ *http.Request) {
+			w.Header().Set("Content-Type", "application/json")
+			_, _ = w.Write([]byte(body))
+		},
+	})
+	got, err := client.CommitTimeForFile(t.Context(), "owner/repo", "docs/0001.md", "main")
+	if err != nil {
+		t.Fatalf("CommitTimeForFile: %v", err)
+	}
+	want := time.Date(2024, 3, 14, 15, 9, 26, 0, time.UTC)
+	if !got.Equal(want) {
+		t.Errorf("got %v, want %v", got, want)
+	}
+}
+
+func TestCommitTimeForFile_EmptyHistory_ZeroTime(t *testing.T) {
+	client := fakeGitHub(t, map[string]http.HandlerFunc{
+		"/api/v3/repos/owner/repo/commits": func(w http.ResponseWriter, _ *http.Request) {
+			w.Header().Set("Content-Type", "application/json")
+			_, _ = w.Write([]byte(`[]`))
+		},
+	})
+	got, err := client.CommitTimeForFile(t.Context(), "owner/repo", "new.md", "main")
+	if err != nil {
+		t.Fatalf("CommitTimeForFile: %v", err)
+	}
+	if !got.IsZero() {
+		t.Errorf("empty history should yield zero time, got %v", got)
+	}
+}
+
 func TestListPullRequestFiles_ReturnsPaths(t *testing.T) {
 	body := `[
 		{"filename":"docs/rfc/0001.md","status":"modified"},

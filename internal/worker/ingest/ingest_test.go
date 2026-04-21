@@ -31,13 +31,18 @@ func (f *fakeStore) Upsert(_ context.Context, doc *domain.Document) error {
 
 // fakeFetcher returns a canned response.
 type fakeFetcher struct {
-	content []byte
-	sha     string
-	err     error
+	content    []byte
+	sha        string
+	commitTime time.Time
+	err        error
 }
 
 func (f *fakeFetcher) GetFile(_ context.Context, _, _, _ string) ([]byte, string, error) {
 	return f.content, f.sha, f.err
+}
+
+func (f *fakeFetcher) CommitTimeForFile(_ context.Context, _, _, _ string) (time.Time, error) {
+	return f.commitTime, nil
 }
 
 // fakeQueue records enqueued jobs.

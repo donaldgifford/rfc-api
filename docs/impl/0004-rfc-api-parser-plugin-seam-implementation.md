@@ -143,8 +143,13 @@ already use in-repo.
       frontmatter prefix + numeric part; prefix-mismatch is a hard
       error.
 - [x] Timestamps: prefer frontmatter `created`/`updated`; fall back
-      to `time.Now().UTC()` when absent (worker can supply the commit
-      timestamp via Source in a follow-up — the contract is stable).
+      to `Source.CommitTime` (upstream commit date resolved by the
+      worker via `githubsource.CommitTimeForFile`) and finally to
+      `time.Now().UTC()`. The follow-up noted in Phase 2 now ships —
+      `domain.Source` grew a `CommitTime` field, `ingest.Handler`
+      resolves the timestamp after `GetFile`, and both `doczmarkdown`
+      and `testparser` honor the three-tier fallback so re-ingests
+      of frontmatter-less docs carry stable archival timestamps.
 - [x] Status validation: `t.Lifecycle` non-empty → status must be
       one of its values; else any non-empty string passes.
 - [x] `package init()` calls `parser.MustRegister("docz-markdown",

@@ -294,6 +294,48 @@ func (c *Client) ListPullRequestsForFile(ctx context.Context, repo, path string)
 	return out, nil
 }
 
+// CommitTimeForFile returns the author timestamp of the most recent
+// commit that touched path on ref. Used by the ingest handler to
+// populate Source.CommitTime so parsers can fall back to the upstream
+// commit time (instead of time.Now) when frontmatter omits
+// created/updated — see IMPL-0004 Phase 2 follow-up.
+//
+// Returns a zero time + nil error when no commits are found (new
+// paths that exist in the tree but have no history yet). A nonzero
+// error bubbles up with the usual retry wrapper.
+func (c *Client) CommitTimeForFile(ctx context.Context, repo, path, ref string) (time.Time, error) {
+	owner, name, err := splitRepo(repo)
+	if err != nil {
+		return time.Time{}, err
+	}
+	var commits []*github.RepositoryCommit
+	err = c.withRetry(ctx, func() error {
+		cs, _, err := c.api.Repositories.ListCommits(ctx, owner, name,
+			&github.CommitsListOptions{
+				Path:        path,
+				SHA:         ref,
+				ListOptions: github.ListOptions{PerPage: 1},
+			})
+		if err != nil {
+			return err //nolint:wrapcheck // wrapped at the outer call site
+		}
+		commits = cs
+		return nil
+	})
+	if err != nil {
+		return time.Time{}, fmt.Errorf("commit time %s:%s@%s: %w", repo, path, ref, err)
+	}
+	if len(commits) == 0 {
+		return time.Time{}, nil
+	}
+	if c := commits[0].GetCommit(); c != nil {
+		if a := c.GetAuthor(); a != nil {
+			return a.GetDate().Time, nil
+		}
+	}
+	return time.Time{}, nil
+}
+
 // ListPullRequestComments returns every comment on the given PR —
 // both the main conversation (via the issues endpoint) and line-
 // review comments (via the pulls endpoint). Caller dedups + ranks

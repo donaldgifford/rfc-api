@@ -46,6 +46,7 @@ type Store interface {
 // needs. A fake can satisfy this from memory in tests.
 type Fetcher interface {
 	GetFile(ctx context.Context, repo, path, ref string) ([]byte, string, error)
+	CommitTimeForFile(ctx context.Context, repo, path, ref string) (time.Time, error)
 }
 
 // Enqueuer is what the handler uses to emit downstream jobs
@@ -158,10 +159,22 @@ func (h *Handler) Handle(ctx context.Context, job queue.Job) error {
 		return nil
 	}
 
+	// Best-effort commit-time lookup. A failure here is non-fatal —
+	// the parser's own fallback (frontmatter → Source.CommitTime →
+	// time.Now) still yields a valid document. Logging it at DEBUG
+	// keeps the signal out of the normal ingest log stream.
+	commitTime, err := h.fetcher.CommitTimeForFile(ctx, p.Repo, p.Path, ref)
+	if err != nil {
+		h.logger.DebugContext(ctx, "commit time lookup failed",
+			"repo", p.Repo, "path", p.Path, "err", err.Error())
+		commitTime = time.Time{}
+	}
+
 	doc, err := parserImpl.Parse(raw, dt, domain.Source{
-		Repo:   p.Repo,
-		Path:   p.Path,
-		Commit: sha,
+		Repo:       p.Repo,
+		Path:       p.Path,
+		Commit:     sha,
+		CommitTime: commitTime,
 	})
 	if err != nil {
 		return fmt.Errorf("parse: %w", err)

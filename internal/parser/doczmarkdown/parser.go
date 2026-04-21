@@ -93,11 +93,22 @@ func (Parser) Parse(raw []byte, t domain.DocumentType, src domain.Source) (domai
 			domain.ErrInvalidInput, fm.Status, t.ID)
 	}
 
+	// Fallback order per IMPL-0004 RD: frontmatter → Source.CommitTime
+	// (the upstream commit the worker resolved) → time.Now(). The
+	// commit-time fallback keeps archival timestamps stable across
+	// re-ingests of a frontmatter-less doc; without it each re-ingest
+	// would stamp the current wall clock.
 	created := fm.Created
+	if created.IsZero() {
+		created = src.CommitTime
+	}
 	if created.IsZero() {
 		created = time.Now().UTC()
 	}
 	updated := fm.Updated
+	if updated.IsZero() {
+		updated = src.CommitTime
+	}
 	if updated.IsZero() {
 		updated = created
 	}
