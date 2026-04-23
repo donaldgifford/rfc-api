@@ -24,7 +24,8 @@ accepted: 2026-04-20
 
 ## Status
 
-Proposed
+Accepted — implementation landed in IMPL-0001; the server runs entirely
+on `net/http` as specified.
 
 ## Context
 

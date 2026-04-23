@@ -1,16 +1,19 @@
 ---
 id: RFC-0001
 title: "rfc-api: Backend API for the Markdown Portal"
-status: Draft
+status: Accepted
 author: Donald Gifford
 created: 2026-04-18
+accepted: 2026-04-21
 ---
 
 <!-- markdownlint-disable-file MD025 MD041 -->
 
 # RFC 0001: rfc-api: Backend API for the Markdown Portal
 
-**Status:** Draft **Author:** Donald Gifford **Date:** 2026-04-18
+**Status:** Accepted — Phases 1–3 shipped (IMPL-0001..0005); Phase 4
+(auth + MCP polish) remains.
+**Author:** Donald Gifford **Date:** 2026-04-21
 
 <!--toc:start-->
 - [Summary](#summary)

@@ -31,7 +31,7 @@ created: 2026-04-20
   - [Phase 4: Readiness probe and integration tests](#phase-4-readiness-probe-and-integration-tests)
     - [Tasks](#tasks-3)
     - [Success Criteria](#success-criteria-3)
-  - [Phase 5: Swap-in and remove the in-memory store](#phase-5-swap-in-and-remove-the-in-memory-store)
+  - [Phase 5: Swap-in and repurpose the in-memory store](#phase-5-swap-in-and-repurpose-the-in-memory-store)
     - [Tasks](#tasks-4)
     - [Success Criteria](#success-criteria-4)
 - [File Changes](#file-changes)

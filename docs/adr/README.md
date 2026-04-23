@@ -32,6 +32,6 @@ docz create adr "Your ADR Title"
 | ID | Title | Status | Date | Author | Link |
 |----|-------|--------|------|--------|------|
 | ADR-0001 | Use Go and the standard library net/http for rfc-api | Accepted | 2026-04-18 | Donald Gifford | [0001-use-go-and-stdlib-net-http-for-rfc-api.md](0001-use-go-and-stdlib-net-http-for-rfc-api.md) |
-| ADR-0002 | Use PostgreSQL as the rfc-api datastore | Proposed | 2026-04-18 | Donald Gifford | [0002-use-postgresql-as-the-rfc-api-datastore.md](0002-use-postgresql-as-the-rfc-api-datastore.md) |
-| ADR-0003 | Use Meilisearch for rfc-api search | Proposed | 2026-04-18 | Donald Gifford | [0003-use-meilisearch-for-rfc-api-search.md](0003-use-meilisearch-for-rfc-api-search.md) |
+| ADR-0002 | Use PostgreSQL as the rfc-api datastore | Accepted | 2026-04-18 | Donald Gifford | [0002-use-postgresql-as-the-rfc-api-datastore.md](0002-use-postgresql-as-the-rfc-api-datastore.md) |
+| ADR-0003 | Use Meilisearch for rfc-api search | Accepted | 2026-04-18 | Donald Gifford | [0003-use-meilisearch-for-rfc-api-search.md](0003-use-meilisearch-for-rfc-api-search.md) |
 <!-- END DOCZ AUTO-GENERATED -->

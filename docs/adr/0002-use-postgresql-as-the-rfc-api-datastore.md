@@ -1,9 +1,10 @@
 ---
 id: ADR-0002
 title: "Use PostgreSQL as the rfc-api datastore"
-status: Proposed
+status: Accepted
 author: Donald Gifford
 created: 2026-04-18
+accepted: 2026-04-20
 ---
 <!-- markdownlint-disable-file MD025 MD041 -->
 
@@ -23,7 +24,8 @@ created: 2026-04-18
 
 ## Status
 
-Proposed
+Accepted — implementation landed in IMPL-0002; Postgres is the
+production store end-to-end.
 
 ## Context
 

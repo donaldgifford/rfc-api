@@ -1,9 +1,10 @@
 ---
 id: ADR-0003
 title: "Use Meilisearch for rfc-api search"
-status: Proposed
+status: Accepted
 author: Donald Gifford
 created: 2026-04-18
+accepted: 2026-04-21
 ---
 <!-- markdownlint-disable-file MD025 MD041 -->
 
@@ -23,7 +24,9 @@ created: 2026-04-18
 
 ## Status
 
-Proposed
+Accepted — implementation landed in IMPL-0005; Meilisearch backs
+`/api/v1/search` end-to-end with per-section indexing and
+worker-driven writes.
 
 ## Context
 

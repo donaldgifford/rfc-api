@@ -55,12 +55,16 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 - `internal/worker/reindex/` — `reindex` and `search_delete` job handlers. Reindex re-reads the authoritative Postgres row (graceful skip on ErrNotFound when ingest + tombstone race). Scanner's tombstone path now enqueues `search_delete` alongside the Postgres delete.
 - `cmd/rfc-api/reindex.go` — `rfc-api reindex` enumerates every document and enqueues one job per id (dedup `doc:<id>`). `--dry-run` prints the set; `--check-drift` compares Postgres vs Meili per type and exits 1 on any non-zero delta. `make reindex` wraps it.
 - `cmd/rfc-api/serve.go` — NoopClient replaced by the Meili read client; `cmd/rfc-api/work.go` builds the write-scoped Indexer and passes it to `worker.New` as `SearchIndexer`.
-- CI gained a `meilisearch:v1.11` service container on the `integration` job; `make test-integration-search` exercises the live-server path (seed → query → per-type filter → delete → drift count → settings idempotency).
+- CI gained a `meilisearch:v1.20` service container on the `integration` job; `make test-integration-search` exercises the live-server path (seed → query → per-type filter → delete → drift count → settings idempotency). Version matters: SDK v0.36.2 always ships `disableOnNumbers` in the typoTolerance PATCH body, so Meili < v1.12 rejects the call — keep the CI pin on v1.20 or later.
 - Every Meili-task-returning call goes through `Client.awaitTask` — the SDK's bare `WaitForTask` returns a task whose `Status: "failed"` is still a "done" task, so the helper checks status + surfaces the Meili error message (invalid doc id, missing filterable attr, etc.) rather than silently succeeding.
+
+**RFC / ADR / INV statuses are aligned with reality (2026-04-21 cleanup):** RFC-0001 Accepted, ADR-0001/0002/0003 all Accepted, INV-0001 Concluded. RFC-0002 (rfc-site frontend) stays Draft — frontend work hasn't started. The shipped-IMPL docs (0001–0005) carry the authoritative task-level history; CLAUDE.md summarizes.
+
+**What's next:** no open IMPL plan. The natural next scope is RFC-0001 Phase 4 (auth via Keycloak dev / Okta prod + MCP-ready API polish). Author a fresh IMPL doc (`docz create impl …`) before writing code.
 
 ## Local development
 
-See [`docs/local-dev.md`](./docs/local-dev.md) for the runbook (getting started, port map, compose profiles, pprof workflow, troubleshooting). TL;DR: `mise install && cp .env.example .env && make compose-up && go run ./cmd/rfc-api serve`.
+See [`docs/development/`](./docs/development/) for the setup + requirements overview, or jump straight to [`docs/development/local-dev.md`](./docs/development/local-dev.md) for the runbook (port map, compose profiles, pprof workflow, troubleshooting). TL;DR: `mise install && cp .env.example .env && make compose-up && go run ./cmd/rfc-api serve`.
 
 Dev deps run in `docker compose` via profile-tagged services (`postgres`, `meilisearch` default; `keycloak`, `otel-collector`, `jaeger`, `prometheus`, `grafana`, `loki`, `alloy` opt-in). The `rfc-api` binary itself is **never** run inside compose — always host-run via `go run` or `make run-local`. `docker build` is reserved for goreleaser / CI / release.
 

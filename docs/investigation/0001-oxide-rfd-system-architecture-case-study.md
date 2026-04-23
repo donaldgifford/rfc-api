@@ -1,16 +1,20 @@
 ---
 id: INV-0001
 title: "Oxide RFD system: architecture case study"
-status: Open
+status: Concluded
 author: Donald Gifford
 created: 2026-04-18
+concluded: 2026-04-21
 ---
 
 <!-- markdownlint-disable-file MD025 MD041 -->
 
 # INV 0001: Oxide RFD system: architecture case study
 
-**Status:** Open **Author:** Donald Gifford **Date:** 2026-04-18
+**Status:** Concluded — findings informed RFC-0001 + ADR-0003 and are
+baked into the rfc-api implementation (single-canonical-surface,
+per-section indexing, worker-owned sync).
+**Author:** Donald Gifford **Date:** 2026-04-21
 
 <!--toc:start-->
 - [Question](#question)
