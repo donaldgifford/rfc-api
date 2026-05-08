@@ -1,16 +1,22 @@
 ---
 id: RFC-0002
 title: "rfc-site: Web Frontend for the Markdown Portal"
-status: Draft
+status: Accepted
 author: Donald Gifford
 created: 2026-04-18
+accepted: 2026-04-23
 ---
 
 <!-- markdownlint-disable-file MD025 MD041 -->
 
 # RFC 0002: rfc-site: Web Frontend for the Markdown Portal
 
-**Status:** Draft **Author:** Donald Gifford **Date:** 2026-04-18
+**Status:** Accepted — Phase 1 shipped 2026-04-23. rfc-site is live at
+[github.com/donaldgifford/rfc-site](https://github.com/donaldgifford/rfc-site);
+shared component library at
+[github.com/donaldgifford/design-system](https://github.com/donaldgifford/design-system).
+End-to-end integration (design-system → rfc-site → rfc-api) verified.
+**Author:** Donald Gifford **Date:** 2026-04-23
 
 <!--toc:start-->
 - [Summary](#summary)
