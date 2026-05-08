@@ -222,57 +222,160 @@ The slug change invalidates every existing Meili sub-doc id whose heading used U
 
 ## Open Questions
 
-For review before implementation starts.
+For review before implementation starts. Each question presents distinct, mutually-exclusive options. The **Lean** line names the option I'd pick if forced today; flip or amend in review.
 
-1. **Where does the contract test live?** Two options:
-   - **A.** `internal/search/meilisearch/slug_contract_test.go` — colocated with the implementation. Pro: a developer touching `section.go` sees the contract test in the same directory. Con: not under `test/contract/`, which is the established home for cross-repo contract tests today.
-   - **B.** `test/contract/slug_test.go` — alongside the existing OpenAPI-shape contract tests. Pro: consistent location for "this contract spans repos." Con: `test/contract/` today is OpenAPI-shape-only; mixing in a behavior contract changes its meaning.
+---
 
-   Lean: **A.** The OpenAPI contract tests are about wire-format shape; this is about a value-level invariant of the `section_slug` field. Different category; colocation with the implementation makes the link tighter.
+### Q1. Where does the contract test live?
 
-2. **Snapshot fixture format and collision-test encoding.** A flat JSON list of `{input, expected}` covers pure-call cases trivially. Collision cases need a "scope" notion — multiple inputs in sequence under one slugger instance. Proposed shape:
-   ```json
-   {
-     "pure": [
-       {"input": "Café", "expected": "café"},
-       {"input": "Hello, World!", "expected": "hello-world"}
-     ],
-     "collision_groups": [
-       {
-         "name": "duplicate-h2-notes",
-         "sequence": [
-           {"input": "Notes", "expected": "notes"},
-           {"input": "Notes", "expected": "notes-1"},
-           {"input": "Notes", "expected": "notes-2"}
-         ]
-       }
-     ]
-   }
-   ```
-   Confirm this shape, or propose an alternative.
+- **A.** `internal/search/meilisearch/slug_contract_test.go` — colocated with the implementation.
+  *Pro:* a developer touching `section.go` sees the contract test in the same directory.
+  *Con:* not under `test/contract/`, which is the established home for cross-repo contract tests.
+- **B.** `test/contract/slug_test.go` — alongside the existing OpenAPI-shape contract tests.
+  *Pro:* consistent "this contract spans repos" location.
+  *Con:* `test/contract/` today is OpenAPI-shape-only; mixing in a behavior contract changes its meaning.
 
-3. **Should rfc-site share this fixture file?** Two routes:
-   - Vendor a copy in rfc-site's repo, regen procedure documented in both READMEs. Drift between the two copies is itself a CI failure (a hash check on each side).
-   - Treat each side as independently re-deriving from upstream `github-slugger`; trust both CIs to catch drift.
+**Lean: A.** The OpenAPI contract tests are about wire-format shape; this is about a value-level invariant of `section_slug`. Different category; colocation makes the implementation↔contract link tighter.
 
-   The first is more robust; the second is less coupled. Lean toward independent: rfc-api's CI asserts `Go port == snapshot`; rfc-site's CI asserts `npx github-slugger == snapshot`. The snapshot is regenerated only when upstream releases (rare), and the regen procedure produces byte-identical output on both sides.
+**Selected:** _\[ ]_
 
-4. **Backwards-compat during the reindex window.** After deploy + before reindex finishes, `section_slug` values returned from search will be the new algorithm but Meili sub-doc ids are still the old algorithm (or vice versa, depending on which side is touched first). Options:
-   - **(a)** Accept the brief broken window. Internal-network-only tool; reindex completes in seconds for the current corpus.
-   - **(b)** Coordinate deploy: drain the worker, reindex, then bring serve back. Adds 2 minutes of read downtime.
-   - **(c)** Feature flag the new algorithm; run dual-emit for one release; switch over.
+---
 
-   Lean: **(a)**. The corpus is small enough that reindex is sub-minute, and rfc-site's response to a stale slug is "scroll didn't happen" — graceful, not broken.
+### Q2. Snapshot fixture format.
 
-5. **`\p{L}\p{N}` vs the upstream precomputed regex.** Go's `\p{L}\p{N}` covers Unicode letters + digits. The upstream `github-slugger` uses a precomputed enumeration of every excluded codepoint, which differs in a handful of corner-case blocks (musical symbols, certain emoji ranges, some historic scripts). For practical heading content these never appear. Should we ship `\p{L}\p{N}` and call it good (recommended), or vendor the upstream regex.js for byte-perfect parity even on edge codepoints?
+- **A.** Two-section JSON with pure cases and collision groups separated:
+  ```json
+  {
+    "pure": [
+      {"input": "Café", "expected": "café"},
+      {"input": "Hello, World!", "expected": "hello-world"}
+    ],
+    "collision_groups": [
+      {
+        "name": "duplicate-h2-notes",
+        "sequence": [
+          {"input": "Notes", "expected": "notes"},
+          {"input": "Notes", "expected": "notes-1"},
+          {"input": "Notes", "expected": "notes-2"}
+        ]
+      }
+    ]
+  }
+  ```
+- **B.** Single flat list with an explicit `scope` field; collision sequencing implied by ordering within the same scope:
+  ```json
+  [
+    {"scope": "pure", "input": "Café", "expected": "café"},
+    {"scope": "doc:notes", "input": "Notes", "expected": "notes"},
+    {"scope": "doc:notes", "input": "Notes", "expected": "notes-1"}
+  ]
+  ```
+- **C.** YAML rather than JSON (more readable for the Unicode + multi-line cases).
 
-   Lean: **`\p{L}\p{N}`**. The snapshot fixture catches any divergence the moment it actually appears in real headings; until then, the precomputed regex is dead weight.
+**Lean: A.** The pure/collision split makes the test's structure obvious from one glance at the file; explicit groups beat order-dependent encoding for diff-friendliness.
 
-6. **Inline HTML in headings.** rfc-api's `headingText` (`section.go:98`) walks goldmark `*ast.Text` segments. It does *not* recurse into `*ast.RawHTML` or `*ast.AutoLink`. rehype-slug operates on rendered HTML, so it would see the text content of `<span>foo</span>` as `foo`. Today rfc-api would see... need to verify. Confirm by adding a fixture case `## <span>foo</span> bar` and checking what `headingText` produces. If it differs from rendered text content, that's a separate bug — out of this IMPL's scope but worth flagging in INV-0002 as a follow-up.
+**Selected:** _\[ ]_
 
-7. **Should `section_slug` get an explicit OpenAPI constraint?** Today it's `type: string`. We could add `pattern: "^[\\p{L}\\p{N}_-]+(-[0-9]+)?$"` to encode the contract at the wire level. Pro: machine-checkable from any client. Con: OpenAPI 3.1 / `kin-openapi` regex support for `\p{L}` is shaky; might need a more permissive pattern. Lean: skip. The behavior contract belongs in this IMPL's snapshot fixture, not in the wire schema.
+---
 
-8. **Naming.** The existing function is `slugify`. Upstream calls it `slug`. Rename the public-ish package function to `slug` for parity, or keep `slugify` and let the imported variant be a goofy `slug` alias internally? Lean: rename to `slug` (matches upstream, matches the field name `section_slug`).
+### Q3. Should rfc-site share this fixture file?
+
+- **A.** Vendor a copy in rfc-site's repo. Regen procedure documented in both READMEs. A hash check in both CIs detects drift between the two copies.
+  *Pro:* maximally robust — any drift fails fast.
+  *Con:* tightly couples the repos; vendoring chore on every regen.
+- **B.** Each repo independently re-derives from upstream `github-slugger`. rfc-api's CI asserts `Go port == snapshot`; rfc-site's CI asserts `npx github-slugger == snapshot` against its own copy.
+  *Pro:* loosely coupled; regen produces byte-identical output on both sides anyway.
+  *Con:* a 2-line skew in regen scripts could go undetected briefly.
+- **C.** Single source of truth: rfc-api hosts the fixture, rfc-site fetches it at build time (e.g. via `git submodule` or a `npm` package).
+  *Pro:* truly one file.
+  *Con:* adds a build-time dependency; release-time coordination overhead.
+
+**Lean: B.** Upstream releases rarely. Both regen scripts pin the same upstream version. Independent enforcement keeps the repos loosely coupled, which matters more than a hypothetical regen-skew that the snapshot would catch in the next regen anyway.
+
+**Selected:** _\[ ]_
+
+---
+
+### Q4. Backwards-compat during the reindex window.
+
+After deploy + before reindex finishes, `section_slug` values from search responses use the new algorithm but Meili sub-doc ids are still old (or vice versa, depending on which side ships first).
+
+- **A.** Accept the brief broken window. Internal-network-only tool; reindex completes in seconds for the current corpus.
+  *Effect:* search hits land on the right doc but scroll-to-section may fail for a minute or two.
+- **B.** Coordinate deploy: drain worker, reindex, then bring serve back.
+  *Effect:* ~2 minutes of read downtime, no broken-slug window.
+- **C.** Feature-flag the new algorithm; dual-emit for one release; flip the flag in a follow-up.
+  *Effect:* zero broken window; adds branching in `section.go` for one release cycle.
+
+**Lean: A.** Reindex is sub-minute on the current corpus, audience is internal, and the worst-case UX (scroll didn't happen) is graceful, not broken.
+
+**Selected:** _\[ ]_
+
+---
+
+### Q5. `\p{L}\p{N}` vs upstream's precomputed Unicode regex.
+
+- **A.** Use Go's native `\p{L}\p{N}_\- ` keep set.
+  *Pro:* 1-line regex, leverages Go's Unicode tables, faithful for practical heading content.
+  *Con:* differs from upstream on a handful of edge codepoints (musical symbols, some historic scripts, certain emoji ranges) that don't appear in real prose.
+- **B.** Vendor the upstream `regex.js` precomputed character class verbatim (port the giant blob to a Go raw-string `regexp.MustCompile`).
+  *Pro:* byte-perfect parity even on edge codepoints.
+  *Con:* ~14 KB of opaque generated regex source in our codebase; updates require re-running upstream's `script/` against the latest Unicode database.
+
+**Lean: A.** The snapshot fixture catches any divergence the moment it actually shows up in real headings. Until then, the precomputed regex is dead weight that our developers can't read.
+
+**Selected:** _\[ ]_
+
+---
+
+### Q6. Inline HTML / non-Text inlines in headings.
+
+`headingText` (`section.go:98`) today walks goldmark `*ast.Text` segments and one level of children. It does *not* recurse into `*ast.RawHTML` or `*ast.AutoLink`. rehype-slug operates on rendered HTML, so for `## <span>foo</span> bar` it sees `foo bar`. We need to confirm what rfc-api currently produces.
+
+- **A.** Verify behavior, leave as-is if it matches.
+  *Action:* add a fixture case `## <span>foo</span> bar` to the snapshot, run; if rfc-api matches, done.
+- **B.** Verify behavior, file a follow-up if it diverges, ship this IMPL anyway.
+  *Action:* same verification; if it diverges, open a separate issue + add a `t.Skip` for that case in this PR.
+- **C.** Fix `headingText` in this IMPL to recurse into RawHTML segments before the snapshot is generated.
+  *Pro:* one less follow-up.
+  *Con:* expands the scope of this IMPL beyond the slug algorithm.
+
+**Lean: B.** Inline HTML in Markdown headings is rare in this corpus and not a regression — the contract test will surface it later if it ever appears. Keep this IMPL focused.
+
+**Selected:** _\[ ]_
+
+---
+
+### Q7. Add an explicit OpenAPI constraint on `section_slug`?
+
+Today it's `type: string`. We could add a `pattern:` to encode the contract at the wire level.
+
+- **A.** Add `pattern: "^[\\p{L}\\p{N}_-]+(-[0-9]+)?$"` (or a more-permissive ASCII fallback).
+  *Pro:* machine-checkable from any client.
+  *Con:* OpenAPI 3.1 / `kin-openapi` regex support for `\p{L}` is unreliable; we may have to fall back to `[a-zA-Z0-9_\-]` which under-constrains.
+- **B.** Leave the schema as `type: string`; keep the contract in the snapshot fixture.
+  *Pro:* no `kin-openapi` portability headaches.
+  *Con:* no client-side schema enforcement.
+
+**Lean: B.** The behavior contract belongs in the snapshot fixture, where it's enforced by both producer and consumer CI. The OpenAPI schema isn't the right tool for "this string was produced by github-slugger."
+
+**Selected:** _\[ ]_
+
+---
+
+### Q8. Naming: `slugify` vs `slug`.
+
+The existing function is `slugify`. Upstream `github-slugger` calls it `slug`. The field on the wire is `section_slug`.
+
+- **A.** Rename `slugify` → `slug`. Matches upstream, matches the field name. Internal-only function; no API break.
+- **B.** Keep `slugify` for the existing function and add a new internal `slug` alias.
+  *Pro:* zero diff churn outside the function body.
+  *Con:* two names for one thing in the same package.
+- **C.** Keep `slugify` everywhere; treat the upstream-naming alignment as cosmetic.
+
+**Lean: A.** Internal package function, single call site, one-line rename. The naming alignment is small but real value when reading the code against the upstream reference.
+
+**Selected:** _\[ ]_
 
 ## Dependencies
 
