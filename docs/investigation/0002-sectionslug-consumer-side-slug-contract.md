@@ -69,9 +69,9 @@ Today the contract is implicit. When the two slugifiers diverge — Unicode norm
 
 ## Findings
 
-<!-- Filled in as the investigation progresses. -->
-
 ### Algorithm A — rfc-api `slugify`
+
+Source: `internal/search/meilisearch/section.go:145`.
 
 ```go
 var nonSlugRune = regexp.MustCompile(`[^a-z0-9]+`)
@@ -84,31 +84,191 @@ func slugify(s string) string {
 }
 ```
 
-Pure, stateless. ASCII-only post-strip. No collision handling.
+Properties:
+
+- **Keep set:** `[a-z0-9]` only (post-lowercase). Strips every other rune — including underscores and every Unicode letter.
+- **Replacement strategy:** runs of stripped chars *and whitespace* collapse to a single `-`.
+- **Trim:** leading/trailing `-` removed.
+- **Stateless:** no collision tracking; `slugify("Notes")` returns `"notes"` every call.
+
+The input string passed to `slugify` is the AST-flattened heading text (`headingText` at `section.go:98` walks the goldmark inline children and concatenates `*ast.Text` segments — backticks, link wrappers, and emphasis are dropped, but their inner text is kept). So `## The \`Source\` field` arrives at `slugify` as `"The Source field"`.
 
 ### Algorithm B — `github-slugger`
 
-<!-- TODO: read upstream slug.js, summarize the rule set:
-     - case folding (lowercase via unicode-aware?)
-     - allowed chars (\p{L}\p{N}_- per the upstream regex?)
-     - separator (single hyphen?)
-     - whitespace handling
-     - trailing/leading punctuation
-     - collision suffixing (per-instance state) -->
+Source: [github.com/Flet/github-slugger](https://github.com/Flet/github-slugger), `index.js` + `regex.js`. This is what `rehype-slug` delegates to and what GitHub itself uses for heading anchors.
 
-### Fixture comparison
+```js
+export function slug(value, maintainCase) {
+  if (typeof value !== 'string') return ''
+  if (!maintainCase) value = value.toLowerCase()
+  return value.replace(STRIP_REGEX, '').replace(/ /g, '-')
+}
+```
 
-<!-- TODO: table of (heading, rfc-api_slug, github-slugger_slug, match?). -->
+Plus a stateful wrapper class that adds collision suffixing:
+
+```js
+slug(value, maintainCase) {
+  let result = slug(value, maintainCase === true)
+  const originalSlug = result
+  while (own.call(self.occurrences, result)) {
+    self.occurrences[originalSlug]++
+    result = originalSlug + '-' + self.occurrences[originalSlug]
+  }
+  self.occurrences[result] = 0
+  return result
+}
+```
+
+Properties:
+
+- **Keep set:** `\p{L}` (Unicode letters) + `\p{N}` (Unicode digits) + `_` + `-` + ` ` (single space). Everything else stripped, *not* replaced.
+  - The upstream `STRIP_REGEX` is a precomputed enumeration of every Unicode codepoint that isn't in this set. For practical heading content `[^\p{L}\p{N}_\- ]` is faithful — a handful of codepoints in unusual blocks (musical symbols, certain emoji ranges) differ but never appear in real prose.
+- **Replacement strategy:** stripped chars are removed (no hyphen substitution). Then *single-space → hyphen*, applied as a separate pass — multiple consecutive spaces become multiple consecutive hyphens, and only `0x20` is treated as space (tabs/NBSP are stripped, not space-converted).
+- **Trim:** *none*. A heading like `"  Padded  "` lowercases to `"  padded  "`, no chars stripped, then spaces→hyphens → `"--padded--"`.
+- **Stateful:** the `Slugger` class tracks per-document occurrences. Second `## Notes` becomes `notes-1`; third becomes `notes-2`. rehype-slug instantiates one slugger per HAST tree, so the state is per-rendered-document.
+
+### Fixture comparison (synthetic)
+
+26 representative cases. Run via a standalone Go harness that reimplements both algorithms (rfc-api copy verbatim; github-slugger ported using `\p{L}\p{N}` for the keep set). All 26 outcomes matched the prior hypothesis — no surprise mismatches.
+
+| #  | Heading                | rfc-api            | github-slugger         | Match | Why diverges |
+|----|------------------------|--------------------|------------------------|-------|--------------|
+| 1  | `Simple heading`       | `simple-heading`   | `simple-heading`       | ✓     | — |
+| 2  | `Hello, World!`        | `hello-world`      | `hello-world`          | ✓     | — |
+| 3  | `What's New?`          | `what-s-new`       | `whats-new`            | ✗     | apostrophe: rfc-api collapses+hyphenates, github-slugger strips |
+| 4  | `A.B.C`                | `a-b-c`            | `abc`                  | ✗     | period: rfc-api → hyphen, github-slugger → strip |
+| 5  | `Section 1.2.3`        | `section-1-2-3`    | `section-123`          | ✗     | period stripping (no neighbouring space) |
+| 6  | `Q&A`                  | `q-a`              | `qa`                   | ✗     | ampersand stripping |
+| 7  | `100%`                 | `100`              | `100`                  | ✓     | — |
+| 8  | `C++`                  | `c`                | `c`                    | ✓     | — |
+| 9  | `[Link]`               | `link`             | `link`                 | ✓     | — |
+| 10 | `(parens)`             | `parens`           | `parens`               | ✓     | — |
+| 11 | `my_var`               | `my-var`           | `my_var`               | ✗     | underscore: rfc-api strips, github-slugger keeps |
+| 12 | `__init__`             | `init`             | `__init__`             | ✗     | leading/trailing underscore preserved by github-slugger |
+| 13 | `Hello   World`        | `hello-world`      | `hello---world`        | ✗     | rfc-api collapses runs of ws, github-slugger emits N hyphens |
+| 14 | `  Padded  `           | `padded`           | `--padded--`           | ✗     | rfc-api trims, github-slugger keeps as hyphens |
+| 15 | `   ` (ws-only)        | ``                 | `---`                  | ✗     | empty vs three hyphens |
+| 16 | `Café`                 | `caf`              | `café`                 | ✗     | Latin-1 letter dropped vs preserved |
+| 17 | `日本語`                | ``                 | `日本語`                | ✗     | CJK letters dropped vs preserved |
+| 18 | `α-β-γ`                | ``                 | `α-β-γ`                | ✗     | Greek letters dropped vs preserved |
+| 19 | `Привет`               | ``                 | `привет`               | ✗     | Cyrillic dropped vs preserved |
+| 20 | `The Source field`     | `the-source-field` | `the-source-field`     | ✓     | (post-AST view of `## The \`Source\` field`) |
+| 21 | `One-two`              | `one-two`          | `one-two`              | ✓     | hyphen kept on both |
+| 22 | `One—two`              | `one-two`          | `onetwo`               | ✗     | em dash: rfc-api → hyphen, github-slugger → strip |
+| 23 | `a` / `!` / `2026`     | (as expected)      | (as expected)          | ✓ × 3 | — |
+
+**13 of 26 fixtures diverge (50%).** Plus collision suffixing:
+
+| Run | Heading | rfc-api | github-slugger |
+|-----|---------|---------|----------------|
+| 1st | `Notes` | `notes` | `notes`   |
+| 2nd | `Notes` | `notes` | `notes-1` |
+| 3rd | `Notes` | `notes` | `notes-2` |
+
+### Fixture comparison (real corpus)
+
+Scanned every `.md` file under `docs/` in this repo (skipping fenced code blocks). 355 H1–H6 headings extracted. Comparison run between `rfc-api slugify` and the faithful github-slugger port:
+
+- **26 of 355 headings (7.3%) diverge** on a single-call basis.
+- **38 additional divergences from collision suffixing** — that's the count of duplicate-headings-within-a-doc tuples; each one corresponds to a slug that github-slugger would suffix (`-1`, `-2`, …) but rfc-api emits identically.
+- **Total: 64 of 355 (18.0%) of the live corpus** would deep-link incorrectly today.
+
+Examples from the live corpus:
+
+```
+design/0001-…/      "OpenAPI / contract management"
+                    rfc-api  = "openapi-contract-management"
+                    gh       = "openapi--contract-management"   (space-slash-space → "--")
+
+development/local-dev.md  "Postgres won't come up clean after schema changes"
+                          rfc-api = "postgres-won-t-come-up-clean-after-schema-changes"
+                          gh      = "postgres-wont-come-up-clean-after-schema-changes"
+
+investigation/0001-…  "`rfd-api` — what it actually does"
+                      rfc-api = "rfd-api-what-it-actually-does"
+                      gh      = "rfd-api--what-it-actually-does"   (em dash stripped between two spaces)
+
+impl/0002-…  "Phase 3: store.Docs Postgres implementation"
+             rfc-api = "phase-3-store-docs-postgres-implementation"
+             gh      = "phase-3-storedocs-postgres-implementation"
+```
+
+Three patterns dominate the live divergences:
+
+1. **`X / Y` separators** in headings — extremely common (`API / Interface Changes`, `Migration / Rollout Plan`, `OpenAPI / contract management`). rfc-api emits a single hyphen; github-slugger emits two.
+2. **Apostrophes in casual prose** — `won't`, `can't`, `it's`. rfc-api hyphenates around them; github-slugger drops them.
+3. **Em dashes** in mid-heading parentheticals — heavily used in this corpus (`— what it actually does`).
+
+Plus the universal **collision-suffix** divergence: 38 events across the corpus where the same H2 text appears more than once within a document.
+
+### Side effect: indexer sub-doc id collisions
+
+This investigation surfaced a related live bug on the indexer side. Sub-document ids in Meilisearch are constructed as `{parent_id}__{section_slug}` (`section.go` + `indexer.go`). When the same H2 text appears twice in a document — e.g. `## API / Interface Changes` in both DESIGN-0001 and DESIGN-0002 — the rfc-api slugifier produces the same slug, but those are *different parent_ids*, so no collision in that case. **However,** when the same H2 appears twice *within* one document, the second section's Meili upsert overwrites the first (same `{parent}__{slug}` key). Today this is masked because the corpus rarely has intra-doc duplicate H2s; once it does, search hits silently lose half the section content. github-slugger's collision suffix makes this safe by construction.
 
 ## Conclusion
 
-<!-- TODO: state the answer once findings are in. -->
+**Answer: Yes, they diverge significantly.** rfc-api's current `slugify` and github-slugger / rehype-slug agree on simple ASCII-only prose with no Unicode letters, no underscores, no apostrophes, no inner em-dashes, no `X / Y` separators, and no duplicate H2s. They diverge on every other class of heading.
 
-**Answer:** TBD.
+Concretely on the live rfc-api corpus today: **18% of headings already produce a broken deep-link** from search results, with the majority coming from collision suffixing and the `X / Y` separator pattern. As the corpus grows and includes more international content (ADR-0003 #Search expects this) the divergence rate climbs.
+
+The contract that issue #20 wants explicit + CI-enforced is currently **violated, not just implicit.**
 
 ## Recommendation
 
-<!-- TODO: pick A, B, or C from #Approach step 5 and justify. -->
+**Option A — port github-slugger to Go inside `internal/search/meilisearch/section.go`.** Replace the existing `slugify` with a faithful Go port using Go's native `\p{L}\p{N}` Unicode classes (Go's `regexp` supports them out of the box, unlike older JS engines, so we don't need the giant precomputed Unicode block list — `\p{L}\p{N}` is functionally equivalent for practical heading text). Add a stateful slugger threaded per-document through the indexer to handle collision suffixing.
+
+Sketch:
+
+```go
+var nonSlugRune = regexp.MustCompile(`[^\p{L}\p{N}_\- ]`)
+
+// pure, stateless — for callers that want raw github-slugger semantics.
+func slug(s string) string {
+    s = strings.ToLower(s)
+    s = nonSlugRune.ReplaceAllString(s, "")
+    s = strings.ReplaceAll(s, " ", "-")
+    return s
+}
+
+// slugger is per-document; tracks occurrences for collision suffixing.
+type slugger struct{ seen map[string]int }
+
+func newSlugger() *slugger { return &slugger{seen: map[string]int{}} }
+
+func (g *slugger) slug(s string) string {
+    base := slug(s)
+    result := base
+    for {
+        if _, exists := g.seen[result]; !exists {
+            break
+        }
+        g.seen[base]++
+        result = fmt.Sprintf("%s-%d", base, g.seen[base])
+    }
+    g.seen[result] = 0
+    return result
+}
+```
+
+Wire `splitSections` to instantiate a `*slugger` per document and call `g.slug(headingText(...))` instead of the package-level `slugify`. Keep the package-level pure `slug` function for tests + callers that don't need state.
+
+Then satisfy issue #20's acceptance criteria with a contract test in `test/contract/` that:
+
+1. Generates a fixture set covering the categories in #Approach step 3 (ASCII / punctuation / Unicode / code-spans / collisions / leading-trailing / length-1 / all-stripped). The existing `/tmp/slug-compare` harness is the seed — fold its fixtures in, expand to ~50 cases.
+2. Asserts `slug(input) == expected` for each case.
+3. Optionally — and this is what makes it a true *contract* test against the consumer — vendors a snapshot of `github-slugger`'s actual output (run once via `npx github-slugger`, committed as a JSON fixture) and asserts the Go port matches byte-for-byte. CI re-runs the Go port; rfc-site CI separately re-runs npx-github-slugger against the same fixture file. Drift on either side fails immediately.
+
+**Why not Option B (Node sidecar in tests):** adds Node to the rfc-api test environment. We have no other Node dependency in this repo and don't want to introduce one for a 30-LoC algorithm. The "snapshot fixture from a one-time npx run" pattern in step 3 above gets the same accuracy guarantee without the runtime Node coupling.
+
+**Why not Option C (relax the contract; rfc-site re-derives slugs):** a per-search-hit re-slug operation on the consumer side adds CPU per page render and pushes the contract responsibility outward to every consumer (MCP server, future CLI, anything else). The whole point of `section_slug` in the API payload is "the producer has already authoritatively slugified this — render it as the heading anchor and link to it." Relaxing means the field has no use, and we'd remove it from the API instead.
+
+**Migration concerns:** changing the slug algorithm means existing Meili sub-doc ids invalidate. Need a `make reindex --check-drift` pass after the change lands; the existing `cmd/rfc-api/reindex.go` infrastructure handles this. Document in the IMPL doc that lands the fix.
+
+**Follow-up scope (not this investigation):**
+
+- Open a follow-up issue / IMPL for the actual implementation + contract test.
+- Coordinate the rollout with rfc-site so it bumps the rfc-api OpenAPI pin and regenerates types in the same window — though no OpenAPI shape changes here, just the runtime values.
 
 ## References
 
