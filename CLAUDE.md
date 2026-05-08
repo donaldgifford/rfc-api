@@ -58,7 +58,9 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 - CI gained a `meilisearch:v1.20` service container on the `integration` job; `make test-integration-search` exercises the live-server path (seed → query → per-type filter → delete → drift count → settings idempotency). Version matters: SDK v0.36.2 always ships `disableOnNumbers` in the typoTolerance PATCH body, so Meili < v1.12 rejects the call — keep the CI pin on v1.20 or later.
 - Every Meili-task-returning call goes through `Client.awaitTask` — the SDK's bare `WaitForTask` returns a task whose `Status: "failed"` is still a "done" task, so the helper checks status + surfaces the Meili error message (invalid doc id, missing filterable attr, etc.) rather than silently succeeding.
 
-**RFC / ADR / INV statuses are aligned with reality (2026-04-21 cleanup):** RFC-0001 Accepted, ADR-0001/0002/0003 all Accepted, INV-0001 Concluded. RFC-0002 (rfc-site frontend) stays Draft — frontend work hasn't started. The shipped-IMPL docs (0001–0005) carry the authoritative task-level history; CLAUDE.md summarizes.
+**RFC / ADR / INV statuses are aligned with reality (2026-04-23 cleanup):** RFC-0001 Accepted, RFC-0002 Accepted (Phase 1 shipped — rfc-site is live), ADR-0001/0002/0003 all Accepted, INV-0001 Concluded. The shipped-IMPL docs (0001–0005) carry the authoritative task-level history; CLAUDE.md summarizes.
+
+**Three-repo system as of 2026-04-23.** This repo is the backend; the Markdown Portal also includes [`rfc-site`](https://github.com/donaldgifford/rfc-site) (SSR frontend, consumes `api/openapi.yaml` via vendor-and-generate) and [`design-system`](https://github.com/donaldgifford/design-system) (shared component library used by rfc-site). End-to-end integration verified. The integration ADR + reference cookbook that was briefly staged in `docs/scratch/` lives in rfc-site's docs now — single source of truth.
 
 **What's next:** no open IMPL plan. The natural next scope is RFC-0001 Phase 4 (auth via Keycloak dev / Okta prod + MCP-ready API polish). Author a fresh IMPL doc (`docz create impl …`) before writing code.
 
