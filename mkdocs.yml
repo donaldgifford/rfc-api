@@ -22,6 +22,7 @@ nav:
     - Investigations:
         - Overview: investigation/README.md
         - 'INV-0001: Oxide RFD system: architecture case study': investigation/0001-oxide-rfd-system-architecture-case-study.md
+        - 'INV-0002: section_slug consumer-side slug contract': investigation/0002-sectionslug-consumer-side-slug-contract.md
     - Plans:
         - Overview: plan/README.md
     - RFCs:
