@@ -91,6 +91,68 @@ second.
 	}
 }
 
+// TestSplitSections_DuplicateH2s_GetCollisionSuffixes verifies that
+// the per-document Slugger is instantiated *inside* splitSections so
+// repeat H2s in one body emit base, base-1, base-2 in order. This is
+// the end-to-end proof that Phase 2's wiring (one slug.NewSlugger()
+// per call) actually fires — unit tests in internal/slug exercise
+// the Slugger directly but cannot prove splitSections threads it
+// correctly.
+func TestSplitSections_DuplicateH2s_GetCollisionSuffixes(t *testing.T) {
+	body := `## Notes
+
+first.
+
+## Notes
+
+second.
+
+## Notes
+
+third.
+`
+	got := splitSections(body)
+	if len(got) != 3 {
+		t.Fatalf("want 3 sections, got %d: %+v", len(got), got)
+	}
+	want := []string{"notes", "notes-1", "notes-2"}
+	for i, w := range want {
+		if got[i].Slug != w {
+			t.Errorf("section %d slug = %q, want %q", i, got[i].Slug, w)
+		}
+		if got[i].Heading != "Notes" {
+			t.Errorf("section %d heading = %q, want %q (collision suffixing applies to slug only)",
+				i, got[i].Heading, "Notes")
+		}
+	}
+}
+
+// TestSplitSections_RepeatedCalls_ProduceIdenticalSlugs pins the
+// per-call slugger contract: calling splitSections twice on the same
+// body must yield byte-identical slug sequences. A regression here
+// would mean we accidentally promoted the Slugger to package state.
+func TestSplitSections_RepeatedCalls_ProduceIdenticalSlugs(t *testing.T) {
+	body := `## Notes
+
+first.
+
+## Notes
+
+second.
+`
+	a := splitSections(body)
+	b := splitSections(body)
+	if len(a) != len(b) {
+		t.Fatalf("len mismatch: %d vs %d", len(a), len(b))
+	}
+	for i := range a {
+		if a[i].Slug != b[i].Slug {
+			t.Errorf("section %d slug differs across calls: %q vs %q (slugger state must reset per call)",
+				i, a[i].Slug, b[i].Slug)
+		}
+	}
+}
+
 func TestSplitSections_LongSectionTruncated(t *testing.T) {
 	body := "## Title\n\n" + strings.Repeat("word ", 300) // ~1500 chars
 	got := splitSections(body)
@@ -102,19 +164,5 @@ func TestSplitSections_LongSectionTruncated(t *testing.T) {
 	}
 	if !strings.HasSuffix(got[0].Body, "…") {
 		t.Errorf("truncated body should end with ellipsis: %q", got[0].Body[len(got[0].Body)-10:])
-	}
-}
-
-func TestSlugify(t *testing.T) {
-	cases := []struct{ in, want string }{
-		{"Open Questions", "open-questions"},
-		{"Phase 1: Client, config, and key separation", "phase-1-client-config-and-key-separation"},
-		{"  Already slug  ", "already-slug"},
-		{"Non-ASCII: café ☕", "non-ascii-caf"},
-	}
-	for _, c := range cases {
-		if got := slugify(c.in); got != c.want {
-			t.Errorf("slugify(%q) = %q, want %q", c.in, got, c.want)
-		}
 	}
 }

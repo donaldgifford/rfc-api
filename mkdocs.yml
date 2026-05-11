@@ -19,9 +19,11 @@ nav:
         - 'IMPL-0003: rfc-api sync worker implementation': impl/0003-rfc-api-sync-worker-implementation.md
         - 'IMPL-0004: rfc-api parser plugin seam implementation': impl/0004-rfc-api-parser-plugin-seam-implementation.md
         - 'IMPL-0005: rfc-api Meilisearch search implementation': impl/0005-rfc-api-meilisearch-search-implementation.md
+        - 'IMPL-0006: section_slug consumer-side slug contract implementation': impl/0006-sectionslug-consumer-side-slug-contract-implementation.md
     - Investigations:
         - Overview: investigation/README.md
         - 'INV-0001: Oxide RFD system: architecture case study': investigation/0001-oxide-rfd-system-architecture-case-study.md
+        - 'INV-0002: section_slug consumer-side slug contract': investigation/0002-sectionslug-consumer-side-slug-contract.md
     - Plans:
         - Overview: plan/README.md
     - RFCs:

@@ -41,6 +41,7 @@ COVERAGE_OUT := coverage.out
 .PHONY: lint lint-fix fmt clean
 .PHONY: run run-local test-api ci check
 .PHONY: release-check release-local
+.PHONY: reindex regen-slug-fixtures
 
 ## Build Targets
 
@@ -121,6 +122,10 @@ run-local: build ## Run exporter with local config
 reindex: build ## Enqueue a reindex for every document and exit
 	@ $(MAKE) --no-print-directory log-$@
 	@$(BIN_DIR)/$(PROJECT_NAME) reindex
+
+regen-slug-fixtures: ## Regenerate test/contract/testdata/slug_fixtures.json from pinned github-slugger
+	@ $(MAKE) --no-print-directory log-$@
+	@./scripts/regen-slug-fixtures.sh
 
 ###############
 ##@ Development Dependencies
