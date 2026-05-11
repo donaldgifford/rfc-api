@@ -58,6 +58,12 @@ is up. `http://127.0.0.1:8081/readyz` shows dependency status
 - `make ci` — full CI locally: lint + test + build + license-check
 - `make reindex` — enqueue a reindex job per document (requires a
   running `rfc-api work` to drain them)
+- `make regen-slug-fixtures` — regenerate
+  `test/contract/testdata/slug_fixtures.json` against pinned
+  `github-slugger@2.0.0`. Bump `SLUGGER_VERSION` in
+  `scripts/regen-slug-fixtures.sh` deliberately; commit the version
+  bump + the regenerated snapshot together so reviewers see what
+  shifted. See IMPL-0006 Phase 3.
 - `make pprof-cpu` / `pprof-heap` / `pprof-goroutine` — capture
   profiles against the admin port
 

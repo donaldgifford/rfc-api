@@ -179,10 +179,10 @@ Pin the algorithm to a snapshot generated from upstream `github-slugger`. The fi
 
 #### Tasks
 
-- [ ] Curate an input source file covering the categories below. Two top-level keys mirroring the fixture shape (Q2=A): `pure` (~40 plain heading strings) and `collision_groups` (~5 named groups, each a sequence of repeats). Commit as `test/contract/testdata/slug_fixtures_input.json`.
+- [x] Curate an input source file covering the categories below. Two top-level keys mirroring the fixture shape (Q2=A): `pure` (~40 plain heading strings) and `collision_groups` (~5 named groups, each a sequence of repeats). Commit as `test/contract/testdata/slug_fixtures_input.json`.
   - **Pure categories:** ASCII basic, each common punctuation class (apostrophe, period, ampersand, em dash, slash with surrounding spaces), leading/trailing whitespace, multi-word with extra spacing, code-span text (post-AST: e.g. `The Source field`), Latin Extended (Café, naïve, Mañana), CJK (日本語, 中文, 한국어), Cyrillic, Greek, mixed scripts, length-1, all-stripped, empty string.
   - **Collision categories:** duplicate H2 text (`Notes` × 3), duplicate after suffix collision (`Notes` × 2 then `Notes-1` × 1 — confirms suffixing doesn't double-suffix), mixed-script repeats.
-- [ ] Run upstream `github-slugger` once locally to produce the snapshot — pin a specific upstream version (e.g. `github-slugger@2.0.0`) in the regen script so the snapshot is reproducible. Pseudocode:
+- [x] Run upstream `github-slugger` once locally to produce the snapshot — pin a specific upstream version (e.g. `github-slugger@2.0.0`) in the regen script so the snapshot is reproducible. Pseudocode:
   ```sh
   cd "$(mktemp -d)"
   npm init -y >/dev/null
@@ -204,14 +204,14 @@ Pin the algorithm to a snapshot generated from upstream `github-slugger`. The fi
     process.stdout.write(JSON.stringify(out, null, 2) + "\n");
   ' "$INPUT_PATH" > test/contract/testdata/slug_fixtures.json
   ```
-- [ ] Commit the snapshot as `test/contract/testdata/slug_fixtures.json` — two-section shape per Q2=A (`pure[]` of `{input, expected}` rows + `collision_groups[]` of `{name, sequence[]}` rows).
-- [ ] Add `test/contract/slug_test.go` (Q1=B — single home for all contract tests):
+- [x] Commit the snapshot as `test/contract/testdata/slug_fixtures.json` — two-section shape per Q2=A (`pure[]` of `{input, expected}` rows + `collision_groups[]` of `{name, sequence[]}` rows).
+- [x] Add `test/contract/slug_test.go` (Q1=B — single home for all contract tests):
   - Loads `testdata/slug_fixtures.json`.
   - Asserts `slug.Slug(input) == expected` for each `pure` row (imports the new `internal/slug` package introduced in Phase 1).
   - For each `collision_groups[i]`, instantiates `slug.NewSlugger()`, walks the `sequence`, asserts each step matches.
   - Test failure messages include `(group=…, step=…, input=…, want=…, got=…)` so the diff is obvious.
-- [ ] Add `scripts/regen-slug-fixtures.sh` (and a `make regen-slug-fixtures` target wrapping it) implementing the Node-script flow above. Pins the upstream version explicitly so future updates are deliberate, not silent.
-- [ ] Verify the test runs in CI on every push (it will — regular `go test ./test/contract/...` under the existing `test-go` job; no workflow change needed).
+- [x] Add `scripts/regen-slug-fixtures.sh` (and a `make regen-slug-fixtures` target wrapping it) implementing the Node-script flow above. Pins the upstream version explicitly so future updates are deliberate, not silent.
+- [x] Verify the test runs in CI on every push (it will — regular `go test ./test/contract/...` under the existing `test-go` job; no workflow change needed).
 
 #### Success Criteria
 

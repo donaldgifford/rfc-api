@@ -1,0 +1,88 @@
+{
+  "_about": "Inputs for the github-slugger snapshot. Regenerate slug_fixtures.json via 'make regen-slug-fixtures' whenever this file changes. See IMPL-0006 Phase 3 and INV-0002 #Findings for the rationale behind each category. Categories are intentionally redundant with internal/slug/slug_test.go: the unit suite proves rfc-api's port matches its OWN spec; this suite proves rfc-api matches UPSTREAM github-slugger byte-for-byte.",
+
+  "pure": [
+    "Simple heading",
+    "Simple",
+    "Hello, World!",
+    "one-two-three",
+    "2026",
+    "a",
+
+    "What's New?",
+    "It's complicated",
+
+    "A.B.C",
+    "Section 1.2.3",
+    "v1.0",
+
+    "Q&A",
+    "Tom & Jerry",
+
+    "One—two",
+    "rfd-api — what it does",
+
+    "my_var",
+    "__init__",
+    "snake_case_name",
+
+    "Hello   World",
+    "  Padded  ",
+    "   ",
+    "foo\tbar",
+
+    "Café",
+    "naïve",
+    "Mañana",
+    "日本語",
+    "中文",
+    "한국어",
+    "Привет",
+    "α-β-γ",
+    "Café 日本語",
+
+    "100%",
+    "C++",
+    "[Link]",
+    "(parens)",
+    "#hashtag",
+    "@mention",
+
+    "OpenAPI / contract management",
+    "X / Y / Z",
+
+    "",
+    "!!!",
+    "AB_C",
+
+    "The Source field"
+  ],
+
+  "collision_groups": [
+    {
+      "name": "duplicate_h2_thrice",
+      "_comment": "Three identical headings — emit base, base-1, base-2.",
+      "sequence": ["Notes", "Notes", "Notes"]
+    },
+    {
+      "name": "pre_existing_suffix_advances_past",
+      "_comment": "After Notes-1 is manually fed, the next Notes must skip to notes-2.",
+      "sequence": ["Notes", "Notes-1", "Notes"]
+    },
+    {
+      "name": "case_insensitive_collision",
+      "_comment": "NOTES and notes both slug to 'notes' — second collides.",
+      "sequence": ["NOTES", "notes"]
+    },
+    {
+      "name": "mixed_script_repeats",
+      "_comment": "Cyrillic headings preserve their letters via \\p{L}; repeats still collide.",
+      "sequence": ["Привет", "Привет"]
+    },
+    {
+      "name": "distinct_headings_no_suffixing",
+      "_comment": "Different bases must not get spurious suffixes.",
+      "sequence": ["Alpha", "Beta", "Gamma"]
+    }
+  ]
+}
