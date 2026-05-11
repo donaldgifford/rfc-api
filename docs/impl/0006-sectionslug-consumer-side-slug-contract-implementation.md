@@ -125,7 +125,7 @@ The pure `Slug` function isn't enough — `rehype-slug` adds collision suffixing
 
 #### Tasks
 
-- [ ] Extend `internal/slug/slug.go` with the stateful slugger:
+- [x] Extend `internal/slug/slug.go` with the stateful slugger:
   ```go
   // Slugger tracks slug occurrences within one document so duplicate
   // headings collide deterministically into base, base-1, base-2, ...
@@ -152,16 +152,16 @@ The pure `Slug` function isn't enough — `rehype-slug` adds collision suffixing
   }
   ```
   Faithfully ports the upstream loop semantics: `seen[base]` increments while `result` is composed from the unsuffixed `base`, matching github-slugger's `originalSlug + '-' + occurrences[originalSlug]`. Edge case to preserve: if `Slugger.Slug("Notes-1")` is called explicitly *after* `Slugger.Slug("Notes")`, the third `Slugger.Slug("Notes")` call must return `notes-2`, not `notes-1` — upstream handles this because the while loop re-checks after each suffix. Cover this in a test.
-- [ ] Modify `internal/search/meilisearch/section.go:splitSections` to instantiate `g := slug.NewSlugger()` once per call and use `g.Slug(heading)` instead of `slug.Slug(...)`. One slugger per document, not one per package; matches `rehype-slug`'s per-HAST-tree behavior.
-- [ ] Add `internal/slug/slug_test.go` cases for the stateful slugger:
+- [x] Modify `internal/search/meilisearch/section.go:splitSections` to instantiate `g := slug.NewSlugger()` once per call and use `g.Slug(heading)` instead of `slug.Slug(...)`. One slugger per document, not one per package; matches `rehype-slug`'s per-HAST-tree behavior.
+- [x] Add `internal/slug/slug_test.go` cases for the stateful slugger:
   - Three calls with the same input emit `notes`, `notes-1`, `notes-2`.
   - The pre-existing-suffix edge case (`Notes`, `Notes-1`, `Notes`) emits `notes`, `notes-1`, `notes-2`.
   - Two separate `Slugger` instances don't share state.
-- [ ] Add a `section_test.go` case for `splitSections` asserting that a synthetic document with three `## Notes` H2s emits sub-doc slugs `notes`, `notes-1`, `notes-2` in that order.
-- [ ] Add a `section_test.go` case asserting that two `splitSections` calls on the same body produce identical slug sequences (state is per-call, not cross-call).
-- [ ] Update `indexer_test.go` if any fixtures used duplicate H2s and now produce different sub-doc ids.
-- [ ] Sanity-check that the Meili sub-doc id construction (`{parent}__{slug}`) still passes Meili's id charset — collision suffixes are `{base}-{N}`, all in `[a-z0-9_-]` per the new keep set, so the existing `__` separator is still safe.
-- [ ] `make lint`, `make fmt`.
+- [x] Add a `section_test.go` case for `splitSections` asserting that a synthetic document with three `## Notes` H2s emits sub-doc slugs `notes`, `notes-1`, `notes-2` in that order.
+- [x] Add a `section_test.go` case asserting that two `splitSections` calls on the same body produce identical slug sequences (state is per-call, not cross-call).
+- [x] Update `indexer_test.go` if any fixtures used duplicate H2s and now produce different sub-doc ids. *(No duplicate-H2 fixtures existed; expected slug values like `"first"` are stable under the new algorithm.)*
+- [x] Sanity-check that the Meili sub-doc id construction (`{parent}__{slug}`) still passes Meili's id charset — collision suffixes are `{base}-{N}`, all in `[a-z0-9_-]` per the new keep set, so the existing `__` separator is still safe.
+- [x] `make lint`, `make fmt`.
 
 #### Success Criteria
 

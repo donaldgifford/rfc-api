@@ -62,11 +62,11 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 **Three-repo system as of 2026-04-23.** This repo is the backend; the Markdown Portal also includes [`rfc-site`](https://github.com/donaldgifford/rfc-site) (SSR frontend, consumes `api/openapi.yaml` via vendor-and-generate) and [`design-system`](https://github.com/donaldgifford/design-system) (shared component library used by rfc-site). End-to-end integration verified. The integration ADR + reference cookbook that was briefly staged in `docs/scratch/` lives in rfc-site's docs now — single source of truth.
 
-[IMPL-0006][impl-0006] is **In Progress** (Phase 1 complete, 2026-05-08). Consumer-side slug contract — porting `github-slugger` semantics so `rfc-api`'s sub-doc slugs match what `rfc-site`'s `rehype-slug` plugin renders for the same Markdown:
+[IMPL-0006][impl-0006] is **In Progress** (Phases 1+2 complete, 2026-05-08). Consumer-side slug contract — porting `github-slugger` semantics so `rfc-api`'s sub-doc slugs match what `rfc-site`'s `rehype-slug` plugin renders for the same Markdown:
 
 - `internal/slug/` — new package. `Slug(s)` is pure (lowercase → strip `[^\p{L}\p{N}_\- ]` → space-to-hyphen; no trim, no run-collapsing). `Slugger` with `NewSlugger()` adds per-document collision suffixing (`notes` → `notes-1` → `notes-2`), faithful to upstream's while-loop semantics so a caller manually feeding `Slug("Notes-1")` between two `Slug("Notes")` calls correctly advances the next collision to `notes-2`, not back to `notes-1`.
-- `internal/search/meilisearch/section.go` — old `slugify` regex + helper deleted; `splitSections` instantiates one `slug.NewSlugger()` per call so duplicate H2s within a document get unique sub-doc ids.
-- See [INV-0002][inv-0002] for the divergence inventory (50% synthetic divergence, ~18% of the live corpus broken). Phases 2–4 (per-doc collision tests via `splitSections`, snapshot-fixture contract test under `test/contract/`, reindex + rfc-site coordination) still pending.
+- `internal/search/meilisearch/section.go` — old `slugify` regex + helper deleted; `splitSections` instantiates one `slug.NewSlugger()` per call so duplicate H2s within a document get unique sub-doc ids. `section_test.go` pins both the collision-suffix sequence and the per-call slugger isolation (two `splitSections` calls on identical body produce byte-identical slug sequences).
+- See [INV-0002][inv-0002] for the divergence inventory (50% synthetic divergence, ~18% of the live corpus broken). Phases 3 (snapshot-fixture contract test under `test/contract/`) and 4 (reindex + rfc-site coordination + issue #20 close) still pending.
 
 [impl-0006]: ./docs/impl/0006-sectionslug-consumer-side-slug-contract-implementation.md
 [inv-0002]: ./docs/investigation/0002-sectionslug-consumer-side-slug-contract.md
