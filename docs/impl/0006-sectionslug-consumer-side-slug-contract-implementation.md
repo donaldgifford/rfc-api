@@ -82,7 +82,7 @@ Replace the existing `slugify` body with a Go port of `github-slugger`'s pure `s
 
 #### Tasks
 
-- [ ] Create `internal/slug/slug.go`:
+- [x] Create `internal/slug/slug.go`:
   ```go
   // Package slug implements GitHub-flavored heading slugification,
   // faithful to upstream github-slugger / rehype-slug. See IMPL-0006.
@@ -105,10 +105,10 @@ Replace the existing `slugify` body with a Go port of `github-slugger`'s pure `s
       return s
   }
   ```
-- [ ] Delete the old `nonSlugRune` regex and `slugify` function from `internal/search/meilisearch/section.go`. Update the single call site in `splitSections` to call `slug.Slug(...)` (Phase 2 will replace this again with the per-document stateful slugger).
-- [ ] Add `internal/slug/slug_test.go` with table-driven cases for the divergence classes from INV-0002 #Findings: apostrophe, period, ampersand, em dash, underscore, leading/trailing space, multiple consecutive spaces, Latin-1 / CJK / Cyrillic / Greek letters, all-stripped input, empty input. (These are *unit* tests on the pure function; the snapshot-driven *contract* test comes in Phase 3.)
-- [ ] Update `internal/search/meilisearch/section_test.go`'s existing slug-related cases — the `simple-heading` / `first` cases stay the same; any case that exercised trimming, underscore stripping, or Unicode needs updating. Add `import "github.com/donaldgifford/rfc-api/internal/slug"` if the test calls the slug function directly.
-- [ ] Run `make lint` and `make fmt`; fix any new warnings.
+- [x] Delete the old `nonSlugRune` regex and `slugify` function from `internal/search/meilisearch/section.go`. Update the single call site in `splitSections` to call `slug.Slug(...)` (Phase 2 will replace this again with the per-document stateful slugger).
+- [x] Add `internal/slug/slug_test.go` with table-driven cases for the divergence classes from INV-0002 #Findings: apostrophe, period, ampersand, em dash, underscore, leading/trailing space, multiple consecutive spaces, Latin-1 / CJK / Cyrillic / Greek letters, all-stripped input, empty input. (These are *unit* tests on the pure function; the snapshot-driven *contract* test comes in Phase 3.)
+- [x] Update `internal/search/meilisearch/section_test.go`'s existing slug-related cases — the `simple-heading` / `first` cases stay the same; any case that exercised trimming, underscore stripping, or Unicode needs updating. Add `import "github.com/donaldgifford/rfc-api/internal/slug"` if the test calls the slug function directly.
+- [x] Run `make lint` and `make fmt`; fix any new warnings.
 
 #### Success Criteria
 

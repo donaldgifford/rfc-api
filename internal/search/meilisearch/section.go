@@ -1,12 +1,13 @@
 package meilisearch
 
 import (
-	"regexp"
 	"strings"
 
 	"github.com/yuin/goldmark"
 	"github.com/yuin/goldmark/ast"
 	"github.com/yuin/goldmark/text"
+
+	"github.com/donaldgifford/rfc-api/internal/slug"
 )
 
 // bodyExcerptLen is the hard cap on indexed per-section prose per OQ6
@@ -48,6 +49,10 @@ func splitSections(body string) []Section {
 	markers := []marker{{heading: "", slug: "", start: 0, end: 0}}
 
 	if doc != nil {
+		// One Slugger per document so duplicate H2s collide into
+		// base, base-1, base-2, ... matching github-slugger /
+		// rehype-slug behavior (see INV-0002, IMPL-0006).
+		sl := slug.NewSlugger()
 		//nolint:errcheck,gosec // walker callback never errors; ast.Walk has no other failure mode.
 		ast.Walk(doc, func(n ast.Node, entering bool) (ast.WalkStatus, error) {
 			if !entering {
@@ -58,9 +63,9 @@ func splitSections(body string) []Section {
 				return ast.WalkContinue, nil
 			}
 			heading := headingText(h, src)
-			slug := slugify(heading)
+			s := sl.Slug(heading)
 			start, end := nodeRange(h, src)
-			markers = append(markers, marker{heading: heading, slug: slug, start: start, end: end})
+			markers = append(markers, marker{heading: heading, slug: s, start: start, end: end})
 			return ast.WalkContinue, nil
 		})
 	}
@@ -135,18 +140,6 @@ func nodeRange(n ast.Node, src []byte) (int, int) {
 		end++
 	}
 	return start, end
-}
-
-// nonSlugRune strips anything that isn't a Unicode letter, digit, or
-// underscore/dash and collapses whitespace into single dashes. Matches
-// GitHub's anchor generation closely enough for doc-facing ids.
-var nonSlugRune = regexp.MustCompile(`[^a-z0-9]+`)
-
-func slugify(s string) string {
-	s = strings.ToLower(strings.TrimSpace(s))
-	s = nonSlugRune.ReplaceAllString(s, "-")
-	s = strings.Trim(s, "-")
-	return s
 }
 
 // truncateExcerpt caps body to bodyExcerptLen runes. Truncation is on

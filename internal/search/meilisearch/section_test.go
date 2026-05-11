@@ -104,17 +104,3 @@ func TestSplitSections_LongSectionTruncated(t *testing.T) {
 		t.Errorf("truncated body should end with ellipsis: %q", got[0].Body[len(got[0].Body)-10:])
 	}
 }
-
-func TestSlugify(t *testing.T) {
-	cases := []struct{ in, want string }{
-		{"Open Questions", "open-questions"},
-		{"Phase 1: Client, config, and key separation", "phase-1-client-config-and-key-separation"},
-		{"  Already slug  ", "already-slug"},
-		{"Non-ASCII: café ☕", "non-ascii-caf"},
-	}
-	for _, c := range cases {
-		if got := slugify(c.in); got != c.want {
-			t.Errorf("slugify(%q) = %q, want %q", c.in, got, c.want)
-		}
-	}
-}
