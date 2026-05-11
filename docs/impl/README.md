@@ -37,5 +37,5 @@ docz create impl "Your Implementation Title"
 | IMPL-0003 | rfc-api sync worker implementation | Completed | 2026-04-20 | Donald Gifford | [0003-rfc-api-sync-worker-implementation.md](0003-rfc-api-sync-worker-implementation.md) |
 | IMPL-0004 | rfc-api parser plugin seam implementation | Completed | 2026-04-20 | Donald Gifford | [0004-rfc-api-parser-plugin-seam-implementation.md](0004-rfc-api-parser-plugin-seam-implementation.md) |
 | IMPL-0005 | rfc-api Meilisearch search implementation | Completed | 2026-04-20 | Donald Gifford | [0005-rfc-api-meilisearch-search-implementation.md](0005-rfc-api-meilisearch-search-implementation.md) |
-| IMPL-0006 | section_slug consumer-side slug contract implementation | Draft | 2026-05-08 | Donald Gifford | [0006-sectionslug-consumer-side-slug-contract-implementation.md](0006-sectionslug-consumer-side-slug-contract-implementation.md) |
+| IMPL-0006 | section_slug consumer-side slug contract implementation | In Progress | 2026-05-08 | Donald Gifford | [0006-sectionslug-consumer-side-slug-contract-implementation.md](0006-sectionslug-consumer-side-slug-contract-implementation.md) |
 <!-- END DOCZ AUTO-GENERATED -->

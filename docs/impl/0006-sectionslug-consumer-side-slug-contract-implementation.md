@@ -34,6 +34,14 @@ created: 2026-05-08
 - [File Changes](#file-changes)
 - [Testing Plan](#testing-plan)
 - [Open Questions](#open-questions)
+  - [Q1. Where does the contract test live?](#q1-where-does-the-contract-test-live)
+  - [Q2. Snapshot fixture format.](#q2-snapshot-fixture-format)
+  - [Q3. Should rfc-site share this fixture file?](#q3-should-rfc-site-share-this-fixture-file)
+  - [Q4. Backwards-compat during the reindex window.](#q4-backwards-compat-during-the-reindex-window)
+  - [Q5. \p{L}\p{N} vs upstream's precomputed Unicode regex.](#q5-plpn-vs-upstreams-precomputed-unicode-regex)
+  - [Q6. Inline HTML / non-Text inlines in headings.](#q6-inline-html--non-text-inlines-in-headings)
+  - [Q7. Add an explicit OpenAPI constraint on section_slug?](#q7-add-an-explicit-openapi-constraint-on-sectionslug)
+  - [Q8. Naming: slugify vs slug.](#q8-naming-slugify-vs-slug)
 - [Dependencies](#dependencies)
 - [References](#references)
 <!--toc:end-->
@@ -48,8 +56,8 @@ Replace `internal/search/meilisearch/section.go:slugify` with a Go port of `gith
 
 ### In Scope
 
-- New pure `slug` function with github-slugger-faithful semantics (Unicode-aware keep set, no trim, single-space → hyphen).
-- Stateful `slugger` struct wired per-document through `splitSections` in `internal/search/meilisearch/`.
+- New `internal/slug/` package with a pure `Slug` function (github-slugger-faithful semantics: Unicode-aware keep set, no trim, single-space → hyphen) and a stateful `Slugger` type for collision suffixing.
+- `internal/search/meilisearch/splitSections` rewired to instantiate `slug.NewSlugger()` per document.
 - Snapshot fixture generated once from upstream `github-slugger` (committed as JSON) and a Go test that asserts the port matches it byte-for-byte.
 - Updates to existing `section_test.go` and `indexer_test.go` slug expectations.
 - `make reindex --check-drift` rollout step + documentation in the PR body and CHANGELOG.
