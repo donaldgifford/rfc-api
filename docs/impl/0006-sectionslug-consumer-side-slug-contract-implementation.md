@@ -1,7 +1,7 @@
 ---
 id: IMPL-0006
 title: "section_slug consumer-side slug contract implementation"
-status: Draft
+status: In Progress
 author: Donald Gifford
 created: 2026-05-08
 ---
@@ -9,7 +9,7 @@ created: 2026-05-08
 
 # IMPL 0006: section_slug consumer-side slug contract implementation
 
-**Status:** Draft
+**Status:** In Progress — Open Questions resolved 2026-05-11; implementation pending.
 **Author:** Donald Gifford
 **Date:** 2026-05-08
 
@@ -70,46 +70,67 @@ Each phase builds on the previous one. A phase is complete when all its tasks ar
 
 ### Phase 1: Algorithm port — pure github-slugger-faithful slug
 
-Replace the existing `slugify` body with a Go port of `github-slugger`'s pure `slug(value)` function. Keep the function signature so existing callers compile unchanged. Update unit-test expectations to match the new behavior.
+Replace the existing `slugify` body with a Go port of `github-slugger`'s pure `slug(value)` function. The pure function moves to a new tiny package `internal/slug/` so the cross-package contract test under `test/contract/` (Q1=B) can call it without exporting implementation-detail symbols from `internal/search/meilisearch/`. `meilisearch` becomes a single-import consumer of the new package.
 
 #### Tasks
 
-- [ ] Add `var keepRune = regexp.MustCompile(\`[^\p{L}\p{N}_\- ]\`)` at the top of `section.go` (replacing `nonSlugRune`).
-- [ ] Rewrite `slugify` (rename to `slug` per github-slugger naming, leave `slugify` as a one-line alias if any external caller depends on it):
+- [ ] Create `internal/slug/slug.go`:
   ```go
-  func slug(s string) string {
+  // Package slug implements GitHub-flavored heading slugification,
+  // faithful to upstream github-slugger / rehype-slug. See IMPL-0006.
+  package slug
+
+  import (
+      "regexp"
+      "strings"
+  )
+
+  var keepRune = regexp.MustCompile(`[^\p{L}\p{N}_\- ]`)
+
+  // Slug returns the github-slugger slug for s. Pure, stateless.
+  // Lowercases, strips runs of disallowed runes, converts single
+  // spaces to hyphens. No trim.
+  func Slug(s string) string {
       s = strings.ToLower(s)
       s = keepRune.ReplaceAllString(s, "")
       s = strings.ReplaceAll(s, " ", "-")
       return s
   }
   ```
-  Note: no leading/trailing `TrimSpace`, no post-strip `Trim("-")`. Both diverge from github-slugger.
-- [ ] Update `section_test.go`'s existing slug-related cases to the new outputs (the `simple-heading` / `first` cases stay the same; any case that exercised trimming, underscore stripping, or Unicode needs updating).
-- [ ] Add new table-driven test cases covering the divergence classes from INV-0002 #Findings: apostrophe, period, ampersand, em dash, underscore, leading/trailing space, multiple consecutive spaces, Latin-1 / CJK / Cyrillic / Greek letters, all-stripped input, empty input.
+- [ ] Delete the old `nonSlugRune` regex and `slugify` function from `internal/search/meilisearch/section.go`. Update the single call site in `splitSections` to call `slug.Slug(...)` (Phase 2 will replace this again with the per-document stateful slugger).
+- [ ] Add `internal/slug/slug_test.go` with table-driven cases for the divergence classes from INV-0002 #Findings: apostrophe, period, ampersand, em dash, underscore, leading/trailing space, multiple consecutive spaces, Latin-1 / CJK / Cyrillic / Greek letters, all-stripped input, empty input. (These are *unit* tests on the pure function; the snapshot-driven *contract* test comes in Phase 3.)
+- [ ] Update `internal/search/meilisearch/section_test.go`'s existing slug-related cases — the `simple-heading` / `first` cases stay the same; any case that exercised trimming, underscore stripping, or Unicode needs updating. Add `import "github.com/donaldgifford/rfc-api/internal/slug"` if the test calls the slug function directly.
 - [ ] Run `make lint` and `make fmt`; fix any new warnings.
 
 #### Success Criteria
 
-- `go test ./internal/search/meilisearch/...` passes with the new algorithm and fixtures.
-- Every new unit-test case in `section_test.go` corresponds to a row in INV-0002's #Findings table.
+- `go test ./internal/slug/... ./internal/search/meilisearch/...` passes.
+- Every new unit-test case in `internal/slug/slug_test.go` corresponds to a row in INV-0002's #Findings table.
 - `make lint` clean.
-- The package-level `slug` is pure and stateless — no package-level `seen` map, no globals beyond the regex.
+- `slug.Slug` is pure and stateless — no package-level state, no globals beyond `keepRune`. The function does *not* `TrimSpace` or post-strip `Trim("-")`; both diverge from github-slugger.
 
 ---
 
 ### Phase 2: Stateful per-document slugger + indexer wiring
 
-The pure `slug` function isn't enough — `rehype-slug` adds collision suffixing per rendered document. Add a `slugger` struct that tracks occurrences per document, and route `splitSections` through it.
+The pure `Slug` function isn't enough — `rehype-slug` adds collision suffixing per rendered document. Add a `Slugger` type in the same `internal/slug/` package, and route `splitSections` through a fresh instance per call.
 
 #### Tasks
 
-- [ ] Add a `slugger` struct in `section.go`:
+- [ ] Extend `internal/slug/slug.go` with the stateful slugger:
   ```go
-  type slugger struct{ seen map[string]int }
-  func newSlugger() *slugger { return &slugger{seen: map[string]int{}} }
-  func (g *slugger) slug(s string) string {
-      base := slug(s)
+  // Slugger tracks slug occurrences within one document so duplicate
+  // headings collide deterministically into base, base-1, base-2, ...
+  // Matches github-slugger's per-Slugger-instance behavior.
+  type Slugger struct{ seen map[string]int }
+
+  // NewSlugger returns a fresh Slugger with no recorded occurrences.
+  func NewSlugger() *Slugger { return &Slugger{seen: map[string]int{}} }
+
+  // Slug returns the slug for s, suffixed with -1, -2, ... if it
+  // collides with a previous call on this Slugger.
+  func (g *Slugger) Slug(s string) string {
+      base := Slug(s)
       result := base
       for {
           if _, exists := g.seen[result]; !exists {
@@ -122,19 +143,24 @@ The pure `slug` function isn't enough — `rehype-slug` adds collision suffixing
       return result
   }
   ```
-  Faithfully port the upstream loop semantics — note that `seen[base]` increments while `result` is composed from the (possibly already-suffixed) string, matching github-slugger's behavior.
-- [ ] Modify `splitSections` to instantiate `g := newSlugger()` once per call and use `g.slug(heading)` instead of the package-level `slug`. (One slugger per document, not one per package; matches `rehype-slug`'s per-HAST-tree behavior.)
-- [ ] Add a unit test in `section_test.go` asserting that `splitSections` on a synthetic document with three `## Notes` H2s produces sub-doc slugs `notes`, `notes-1`, `notes-2` in that order.
-- [ ] Add a unit test asserting that running `splitSections` twice on the same body produces identical slug sequences (state resets per call).
-- [ ] Update `indexer_test.go` if any of its fixtures used duplicate H2s and now produce different sub-doc ids.
+  Faithfully ports the upstream loop semantics: `seen[base]` increments while `result` is composed from the unsuffixed `base`, matching github-slugger's `originalSlug + '-' + occurrences[originalSlug]`. Edge case to preserve: if `Slugger.Slug("Notes-1")` is called explicitly *after* `Slugger.Slug("Notes")`, the third `Slugger.Slug("Notes")` call must return `notes-2`, not `notes-1` — upstream handles this because the while loop re-checks after each suffix. Cover this in a test.
+- [ ] Modify `internal/search/meilisearch/section.go:splitSections` to instantiate `g := slug.NewSlugger()` once per call and use `g.Slug(heading)` instead of `slug.Slug(...)`. One slugger per document, not one per package; matches `rehype-slug`'s per-HAST-tree behavior.
+- [ ] Add `internal/slug/slug_test.go` cases for the stateful slugger:
+  - Three calls with the same input emit `notes`, `notes-1`, `notes-2`.
+  - The pre-existing-suffix edge case (`Notes`, `Notes-1`, `Notes`) emits `notes`, `notes-1`, `notes-2`.
+  - Two separate `Slugger` instances don't share state.
+- [ ] Add a `section_test.go` case for `splitSections` asserting that a synthetic document with three `## Notes` H2s emits sub-doc slugs `notes`, `notes-1`, `notes-2` in that order.
+- [ ] Add a `section_test.go` case asserting that two `splitSections` calls on the same body produce identical slug sequences (state is per-call, not cross-call).
+- [ ] Update `indexer_test.go` if any fixtures used duplicate H2s and now produce different sub-doc ids.
 - [ ] Sanity-check that the Meili sub-doc id construction (`{parent}__{slug}`) still passes Meili's id charset — collision suffixes are `{base}-{N}`, all in `[a-z0-9_-]` per the new keep set, so the existing `__` separator is still safe.
 - [ ] `make lint`, `make fmt`.
 
 #### Success Criteria
 
 - `splitSections` produces unique slugs for repeat-heading documents; no two sections share a Meili sub-doc id.
-- Per-document state isolation verified (no cross-document leakage between calls).
-- Existing `internal/search/meilisearch/` unit tests all green.
+- `slug.Slugger` instance isolation verified — two separate `Slugger` instances do not share state, and `splitSections` resets cleanly between calls.
+- Pre-existing-suffix edge case covered: `Notes`, `Notes-1`, `Notes` emits `notes`, `notes-1`, `notes-2` (not `notes`, `notes-1`, `notes-1`).
+- All `internal/slug/` and `internal/search/meilisearch/` unit tests green.
 - Meili sub-doc id charset constraint (`[a-zA-Z0-9_-]`, ≤511 bytes) still satisfied for any conceivable input.
 
 ---
@@ -145,37 +171,46 @@ Pin the algorithm to a snapshot generated from upstream `github-slugger`. The fi
 
 #### Tasks
 
-- [ ] Curate an input list of ~50 heading strings covering: ASCII basic, ASCII with each common punctuation class, leading/trailing whitespace, multi-word with extra spacing, code-span text (post-AST), inline-formatting text, Latin Extended (Café, naïve, Mañana), CJK (日本語, 中文, 한국어), Cyrillic, Greek, mixed scripts, length-1, all-stripped, empty string, headings with the `X / Y` pattern, headings with em dashes. Commit as `internal/search/meilisearch/testdata/slug_fixtures_input.json` (just the list of strings).
-- [ ] Run upstream `github-slugger` once locally:
+- [ ] Curate an input source file covering the categories below. Two top-level keys mirroring the fixture shape (Q2=A): `pure` (~40 plain heading strings) and `collision_groups` (~5 named groups, each a sequence of repeats). Commit as `test/contract/testdata/slug_fixtures_input.json`.
+  - **Pure categories:** ASCII basic, each common punctuation class (apostrophe, period, ampersand, em dash, slash with surrounding spaces), leading/trailing whitespace, multi-word with extra spacing, code-span text (post-AST: e.g. `The Source field`), Latin Extended (Café, naïve, Mañana), CJK (日本語, 中文, 한국어), Cyrillic, Greek, mixed scripts, length-1, all-stripped, empty string.
+  - **Collision categories:** duplicate H2 text (`Notes` × 3), duplicate after suffix collision (`Notes` × 2 then `Notes-1` × 1 — confirms suffixing doesn't double-suffix), mixed-script repeats.
+- [ ] Run upstream `github-slugger` once locally to produce the snapshot — pin a specific upstream version (e.g. `github-slugger@2.0.0`) in the regen script so the snapshot is reproducible. Pseudocode:
   ```sh
-  cd /tmp && npm init -y && npm i github-slugger
+  cd "$(mktemp -d)"
+  npm init -y >/dev/null
+  npm i github-slugger@2.0.0 >/dev/null
   node -e '
-    const Slugger = (await import("github-slugger")).default;
-    const inputs = require("/path/to/slug_fixtures_input.json");
-    const out = inputs.map((h, i, arr) => {
-      // use the stateless slug() for non-collision cases
-      // for collision testing, group by a "scope" marker (TBD format)
-      return [h, /* ... */];
-    });
-    process.stdout.write(JSON.stringify(out, null, 2));
-  '
+    const GithubSlugger = (await import("github-slugger")).default;
+    const { slug } = await import("github-slugger");
+    const inputs = require(process.argv[1]);
+    const out = {
+      pure: inputs.pure.map(s => ({input: s, expected: slug(s)})),
+      collision_groups: inputs.collision_groups.map(g => {
+        const sl = new GithubSlugger();
+        return {
+          name: g.name,
+          sequence: g.sequence.map(s => ({input: s, expected: sl.slug(s)}))
+        };
+      })
+    };
+    process.stdout.write(JSON.stringify(out, null, 2) + "\n");
+  ' "$INPUT_PATH" > test/contract/testdata/slug_fixtures.json
   ```
-  Decide fixture file shape — see [#Open Questions](#open-questions) Q2.
-- [ ] Commit the snapshot as `internal/search/meilisearch/testdata/slug_fixtures.json` with each row `{input, want_pure}` (and, for collision cases, `{scope, sequence: [{input, want}, ...]}`).
-- [ ] Add `slug_contract_test.go` in `internal/search/meilisearch/` (or `test/contract/` — see Q1):
-  - Loads `slug_fixtures.json`.
-  - Asserts `slug(input) == want_pure` for each pure-call case.
-  - Asserts the stateful `slugger` produces the expected sequence for each collision-scope case.
-  - Test failure messages include `(input=…, want=…, got=…)` so the diff is obvious.
-- [ ] Document the snapshot-regen procedure as a one-shot script (`scripts/regen-slug-fixtures.sh` or a Make target), so future updates to `github-slugger` can be picked up deliberately. Per memory: toolchain version bumps are deliberate, not silent.
-- [ ] Verify the test runs in CI on every push (it will, since it's a regular `go test` under existing `test-go` job — no workflow change needed).
+- [ ] Commit the snapshot as `test/contract/testdata/slug_fixtures.json` — two-section shape per Q2=A (`pure[]` of `{input, expected}` rows + `collision_groups[]` of `{name, sequence[]}` rows).
+- [ ] Add `test/contract/slug_test.go` (Q1=B — single home for all contract tests):
+  - Loads `testdata/slug_fixtures.json`.
+  - Asserts `slug.Slug(input) == expected` for each `pure` row (imports the new `internal/slug` package introduced in Phase 1).
+  - For each `collision_groups[i]`, instantiates `slug.NewSlugger()`, walks the `sequence`, asserts each step matches.
+  - Test failure messages include `(group=…, step=…, input=…, want=…, got=…)` so the diff is obvious.
+- [ ] Add `scripts/regen-slug-fixtures.sh` (and a `make regen-slug-fixtures` target wrapping it) implementing the Node-script flow above. Pins the upstream version explicitly so future updates are deliberate, not silent.
+- [ ] Verify the test runs in CI on every push (it will — regular `go test ./test/contract/...` under the existing `test-go` job; no workflow change needed).
 
 #### Success Criteria
 
-- `internal/search/meilisearch/testdata/slug_fixtures.json` exists, generated from upstream `github-slugger`, committed.
-- Contract test passes locally and in CI.
-- Test failure messages name the specific heading and the rfc-api vs expected divergence.
-- Regen script documented in `docs/development/` (or wherever rebuild instructions live) so a future developer can pick up upstream updates without re-deriving the procedure.
+- `test/contract/testdata/slug_fixtures.json` exists, generated from a pinned upstream `github-slugger` version, committed.
+- `test/contract/slug_test.go` passes locally and in CI; runs under the existing `test-go` job.
+- Test failure messages name the specific group + input + expected vs got.
+- `make regen-slug-fixtures` + `scripts/regen-slug-fixtures.sh` exist and are mentioned from `docs/development/` so a future developer can pick up upstream updates by running one command.
 
 ---
 
@@ -188,7 +223,7 @@ The slug change invalidates every existing Meili sub-doc id whose heading used U
 - [ ] Run `./build/bin/rfc-api reindex --check-drift` against a dev instance pre-deploy; record the divergence count for the PR description.
 - [ ] Bump the binary version (`make release TAG=…`) per RFC-0001 #Versioning. This is a behavior change to a public-ish field (the value of `section_slug`), so it warrants at minimum a patch bump and an explicit CHANGELOG entry.
 - [ ] PR body / CHANGELOG entry calls out: "**Behavior change**: `section_slug` algorithm now matches `github-slugger`. Run `make reindex` against any populated Meili instance after upgrading."
-- [ ] Coordinate with rfc-site: bump rfc-api OpenAPI pin in rfc-site, regenerate types (no schema change but the values shift), redeploy.
+- [ ] Coordinate with rfc-site: bump rfc-api OpenAPI pin in rfc-site, regenerate types (no schema change but the slug values shift), redeploy. rfc-site also re-runs its own snapshot-fixture regen against the same pinned upstream `github-slugger` version per Q3=B (independent re-derivation), and adds the same `make regen-slug-fixtures` equivalent on its side if not already present.
 - [ ] After both deploys, run `rfc-api reindex --check-drift` against staging/prod; confirm no drift.
 - [ ] Close issue #20 with a link to this PR.
 
@@ -203,26 +238,29 @@ The slug change invalidates every existing Meili sub-doc id whose heading used U
 
 | File                                                     | Action | Description |
 |----------------------------------------------------------|--------|-------------|
-| `internal/search/meilisearch/section.go`                 | Modify | Replace `nonSlugRune` + `slugify`; add `slug`, `slugger`, `newSlugger`. Wire `splitSections` to use a per-call slugger. |
-| `internal/search/meilisearch/section_test.go`            | Modify | Update existing cases; add table-driven tests for divergence classes and collision suffixing. |
+| `internal/slug/slug.go`                                  | Create | New package. Pure `Slug(string) string` + stateful `Slugger` / `NewSlugger`. Exported so the `test/contract/` test can call them. |
+| `internal/slug/slug_test.go`                             | Create | Unit tests for the pure function (divergence classes) and the stateful slugger (collision sequences, pre-existing-suffix edge case, instance isolation). |
+| `internal/search/meilisearch/section.go`                 | Modify | Delete `nonSlugRune` + `slugify`. `splitSections` instantiates `slug.NewSlugger()` per call and uses `g.Slug(heading)`. |
+| `internal/search/meilisearch/section_test.go`            | Modify | Update existing slug-related cases; add `splitSections` collision-suffix cases. |
 | `internal/search/meilisearch/indexer_test.go`            | Modify | Update fixtures if any rely on the old `slugify` output. |
-| `internal/search/meilisearch/testdata/slug_fixtures_input.json` | Create | Curated input headings (no algorithm output — just the strings). |
-| `internal/search/meilisearch/testdata/slug_fixtures.json`       | Create | Snapshot of `github-slugger` output for the input list. |
-| `test/contract/slug_test.go`                             | Create | Asserts the Go port matches the snapshot byte-for-byte. Lives in `test/contract/` per Q1 — single home for all contract tests. |
-| `scripts/regen-slug-fixtures.sh` *(or Make target)*      | Create | One-shot regen against upstream `github-slugger`. |
+| `test/contract/testdata/slug_fixtures_input.json`        | Create | Curated input categories (two-section shape: `pure[]` strings + `collision_groups[]` named sequences). |
+| `test/contract/testdata/slug_fixtures.json`              | Create | Snapshot of `github-slugger` output for the input file. Two-section JSON per Q2=A. |
+| `test/contract/slug_test.go`                             | Create | Asserts `slug.Slug` / `slug.Slugger` match the snapshot byte-for-byte. Lives in `test/contract/` per Q1=B — single home for all contract tests. |
+| `scripts/regen-slug-fixtures.sh` + `make regen-slug-fixtures` | Create | One-shot regen against a pinned upstream `github-slugger` version. |
 | `CHANGELOG.md` / release notes                           | Modify | Behavior-change callout for the deploy. |
 
 ## Testing Plan
 
-- **Unit tests** — table-driven, in `section_test.go`. Cover every divergence class from INV-0002 #Findings.
-- **Collision tests** — synthetic doc with N>1 of the same H2; assert sequence.
+- **Unit tests (pure function)** — table-driven, in `internal/slug/slug_test.go`. Cover every divergence class from INV-0002 #Findings.
+- **Unit tests (stateful slugger)** — same file; collision sequences, pre-existing-suffix edge case, instance isolation.
+- **Integration test (splitSections)** — `internal/search/meilisearch/section_test.go`; synthetic doc with N>1 of the same H2; assert the slug sequence flows through the AST walk.
 - **Contract test** — against the committed snapshot fixture; runs on every push under existing `test-go` CI job.
 - **Integration test** — extend `internal/search/meilisearch/*_test.go` (build-tag `integration`) to verify a document with collision-prone H2s indexes without sub-doc id collisions and is queryable per-section. CI's `meilisearch:v1.20` service container already supports this.
 - **Manual rollout sanity** — Phase 4 task list includes the human-driven check ("does scroll-to-anchor work on real search hits").
 
 ## Open Questions
 
-For review before implementation starts. Each question presents distinct, mutually-exclusive options. The **Lean** line names the option I'd pick if forced today; flip or amend in review.
+**All 8 resolved 2026-05-11.** Each question records the options considered, the Lean at draft time, and the **Selected** answer. Implementation proceeds against the selections.
 
 ---
 
@@ -381,10 +419,10 @@ The existing function is `slugify`. Upstream `github-slugger` calls it `slug`. T
 
 - INV-0002 (this repo) — Concluded with Recommendation Option A.
 - Issue #20 — acceptance criteria define the contract-test shape.
-- rfc-site — must regenerate types from rfc-api's OpenAPI spec post-deploy and (if going with Q3 lean) maintain its own snapshot fixture against upstream `github-slugger`.
-- Upstream `github-slugger` (currently 2.x) — pinning a specific version in the regen script keeps the snapshot reproducible.
+- rfc-site — must regenerate types from rfc-api's OpenAPI spec post-deploy and maintain its own snapshot fixture against the same pinned upstream `github-slugger` version (Q3=B).
+- Upstream `github-slugger` (pin to 2.x; specific version recorded in `scripts/regen-slug-fixtures.sh`) — pinning keeps the snapshot reproducible across both repos.
 
-No blockers in this repo. Phases 1–3 can proceed as soon as Open Questions resolve. Phase 4 needs coordination with rfc-site's deploy cadence.
+No blockers in this repo. Open Questions resolved 2026-05-11; Phases 1–3 ready to start. Phase 4 needs coordination with rfc-site's deploy cadence.
 
 ## References
 
