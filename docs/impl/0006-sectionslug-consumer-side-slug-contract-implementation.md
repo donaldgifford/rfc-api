@@ -226,14 +226,36 @@ Pin the algorithm to a snapshot generated from upstream `github-slugger`. The fi
 
 The slug change invalidates every existing Meili sub-doc id whose heading used Unicode letters, underscores, apostrophes, em dashes, the `X / Y` pattern, or duplicate H2s. Reindex the live index after deploy.
 
+#### Operator runbook (paste into PR body / release notes)
+
+> **Behavior change — `section_slug` algorithm now matches `github-slugger`.**
+>
+> Sub-doc ids whose headings contain Unicode letters, underscores,
+> apostrophes, em dashes, the `X / Y` separator, or duplicate H2s
+> will shift. To pick up the new values:
+>
+> 1. Apply the new binary (`make release TAG=…`, then redeploy).
+> 2. Run `make reindex` against every populated Meili instance.
+>    `rfc-api reindex --check-drift` should report zero divergence
+>    once the worker has drained the enqueued jobs.
+> 3. rfc-site does not need a schema bump (no OpenAPI change), but
+>    rerun its slug-fixture regen against pinned
+>    `github-slugger@2.0.0` to confirm its rehype-slug pipeline
+>    still emits matching values; redeploy if anything shifts.
+>
+> Deep-links to old section anchors (`#…-old-slug`) will no longer
+> scroll to the corresponding heading. This is the intended outcome
+> per INV-0002 — search results were already broken under the old
+> algorithm for ~18% of the live corpus.
+
 #### Tasks
 
-- [ ] Run `./build/bin/rfc-api reindex --check-drift` against a dev instance pre-deploy; record the divergence count for the PR description.
-- [ ] Bump the binary version (`make release TAG=…`) per RFC-0001 #Versioning. This is a behavior change to a public-ish field (the value of `section_slug`), so it warrants at minimum a patch bump and an explicit CHANGELOG entry.
-- [ ] PR body / CHANGELOG entry calls out: "**Behavior change**: `section_slug` algorithm now matches `github-slugger`. Run `make reindex` against any populated Meili instance after upgrading."
-- [ ] Coordinate with rfc-site: bump rfc-api OpenAPI pin in rfc-site, regenerate types (no schema change but the slug values shift), redeploy. rfc-site also re-runs its own snapshot-fixture regen against the same pinned upstream `github-slugger` version per Q3=B (independent re-derivation), and adds the same `make regen-slug-fixtures` equivalent on its side if not already present.
-- [ ] After both deploys, run `rfc-api reindex --check-drift` against staging/prod; confirm no drift.
-- [ ] Close issue #20 with a link to this PR.
+- [ ] **(user)** Run `./build/bin/rfc-api reindex --check-drift` against a dev instance pre-deploy; record the divergence count for the PR description.
+- [ ] **(user)** Bump the binary version (`make release TAG=…`) per RFC-0001 #Versioning. This is a behavior change to a public-ish field (the value of `section_slug`), so it warrants at minimum a patch bump.
+- [x] PR body / release-notes wording staged in the operator runbook block above — paste verbatim when opening the PR.
+- [ ] **(user)** Coordinate with rfc-site: rerun its own `make regen-slug-fixtures` equivalent against the same pinned upstream `github-slugger@2.0.0` per Q3=B (independent re-derivation); add the wrapper on its side if not already present. No rfc-api OpenAPI bump is needed — the schema doesn't change, only the slug values inside `section_slug` fields.
+- [ ] **(user)** After both deploys, run `rfc-api reindex --check-drift` against staging/prod; confirm no drift.
+- [ ] **(user)** Close issue #20 with a link to this PR.
 
 #### Success Criteria
 
