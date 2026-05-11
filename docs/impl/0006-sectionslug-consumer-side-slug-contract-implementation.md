@@ -208,7 +208,7 @@ The slug change invalidates every existing Meili sub-doc id whose heading used U
 | `internal/search/meilisearch/indexer_test.go`            | Modify | Update fixtures if any rely on the old `slugify` output. |
 | `internal/search/meilisearch/testdata/slug_fixtures_input.json` | Create | Curated input headings (no algorithm output — just the strings). |
 | `internal/search/meilisearch/testdata/slug_fixtures.json`       | Create | Snapshot of `github-slugger` output for the input list. |
-| `internal/search/meilisearch/slug_contract_test.go`      | Create | Asserts the Go port matches the snapshot byte-for-byte. (Or under `test/contract/` — see Q1.) |
+| `test/contract/slug_test.go`                             | Create | Asserts the Go port matches the snapshot byte-for-byte. Lives in `test/contract/` per Q1 — single home for all contract tests. |
 | `scripts/regen-slug-fixtures.sh` *(or Make target)*      | Create | One-shot regen against upstream `github-slugger`. |
 | `CHANGELOG.md` / release notes                           | Modify | Behavior-change callout for the deploy. |
 
@@ -237,7 +237,7 @@ For review before implementation starts. Each question presents distinct, mutual
 
 **Lean: A.** The OpenAPI contract tests are about wire-format shape; this is about a value-level invariant of `section_slug`. Different category; colocation makes the implementation↔contract link tighter.
 
-**Selected:** _\[ ]_
+**Selected: B** — keep all contract tests in one home (`test/contract/`) so a future grep or new contributor finds them in one place. The "OpenAPI-only" framing of `test/contract/` was incidental, not load-bearing.
 
 ---
 
@@ -274,7 +274,7 @@ For review before implementation starts. Each question presents distinct, mutual
 
 **Lean: A.** The pure/collision split makes the test's structure obvious from one glance at the file; explicit groups beat order-dependent encoding for diff-friendliness.
 
-**Selected:** _\[ ]_
+**Selected: A** — two-section JSON. Diff-friendly, structure is visible at a glance, native output of `npx github-slugger` so no transform step.
 
 ---
 
@@ -292,7 +292,7 @@ For review before implementation starts. Each question presents distinct, mutual
 
 **Lean: B.** Upstream releases rarely. Both regen scripts pin the same upstream version. Independent enforcement keeps the repos loosely coupled, which matters more than a hypothetical regen-skew that the snapshot would catch in the next regen anyway.
 
-**Selected:** _\[ ]_
+**Selected: B** — independently re-derive in each repo. Both regen scripts pin the same upstream version; loose coupling between repos preserved.
 
 ---
 
@@ -309,7 +309,7 @@ After deploy + before reindex finishes, `section_slug` values from search respon
 
 **Lean: A.** Reindex is sub-minute on the current corpus, audience is internal, and the worst-case UX (scroll didn't happen) is graceful, not broken.
 
-**Selected:** _\[ ]_
+**Selected: A** — accept the sub-minute broken-scroll window. Worst-case UX is graceful (the doc still loads, the right page still matches the hit); reindex is fast on this corpus.
 
 ---
 
@@ -324,7 +324,7 @@ After deploy + before reindex finishes, `section_slug` values from search respon
 
 **Lean: A.** The snapshot fixture catches any divergence the moment it actually shows up in real headings. Until then, the precomputed regex is dead weight that our developers can't read.
 
-**Selected:** _\[ ]_
+**Selected: A** — `\p{L}\p{N}_\- `. 1-line readable regex; snapshot catches any future divergence.
 
 ---
 
@@ -342,7 +342,7 @@ After deploy + before reindex finishes, `section_slug` values from search respon
 
 **Lean: B.** Inline HTML in Markdown headings is rare in this corpus and not a regression — the contract test will surface it later if it ever appears. Keep this IMPL focused.
 
-**Selected:** _\[ ]_
+**Selected: B** — verify, file a follow-up if it diverges, ship with `t.Skip` for that one case. Keeps this IMPL's scope crisp on the slug algorithm; `headingText` is a separate function with separate review surface.
 
 ---
 
@@ -359,7 +359,7 @@ Today it's `type: string`. We could add a `pattern:` to encode the contract at t
 
 **Lean: B.** The behavior contract belongs in the snapshot fixture, where it's enforced by both producer and consumer CI. The OpenAPI schema isn't the right tool for "this string was produced by github-slugger."
 
-**Selected:** _\[ ]_
+**Selected: B** — leave the schema as `type: string`. The behavior contract belongs in the snapshot fixture where it's actually enforced, not in a regex that `kin-openapi` may or may not honor faithfully.
 
 ---
 
@@ -375,7 +375,7 @@ The existing function is `slugify`. Upstream `github-slugger` calls it `slug`. T
 
 **Lean: A.** Internal package function, single call site, one-line rename. The naming alignment is small but real value when reading the code against the upstream reference.
 
-**Selected:** _\[ ]_
+**Selected: A** — rename `slugify` → `slug`. Matches upstream `github-slugger` and the wire-field `section_slug`; one-line internal rename.
 
 ## Dependencies
 
