@@ -29,6 +29,7 @@ created: 2026-05-08
     - [Tasks](#tasks-2)
     - [Success Criteria](#success-criteria-2)
   - [Phase 4: Migration + rollout coordination](#phase-4-migration--rollout-coordination)
+    - [Operator runbook (paste into PR body / release notes)](#operator-runbook-paste-into-pr-body--release-notes)
     - [Tasks](#tasks-3)
     - [Success Criteria](#success-criteria-3)
 - [File Changes](#file-changes)
