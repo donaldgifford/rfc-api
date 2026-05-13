@@ -38,7 +38,8 @@ installed by `mise install` — you do not need to install Go by hand.
 mise install              # pin Go / golangci-lint / goimports / ...
 cp .env.example .env      # local config; gitignored, edit freely
 make compose-up           # starts Postgres + Meilisearch
-go run ./cmd/rfc-api serve
+make serve                # builds + runs `rfc-api serve` against compose deps
+                          # (`make work` for the sync worker)
 ```
 
 Then hit `http://localhost:8080/api/v1/types` to confirm the server

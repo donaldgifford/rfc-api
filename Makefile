@@ -39,7 +39,7 @@ COVERAGE_OUT := coverage.out
 .PHONY: build
 .PHONY: test test-all test-coverage
 .PHONY: lint lint-fix fmt clean
-.PHONY: run run-local test-api ci check
+.PHONY: run run-local serve work test-api ci check
 .PHONY: release-check release-local
 .PHONY: reindex regen-slug-fixtures
 
@@ -118,6 +118,14 @@ run: build ## Build and run the CLI
 run-local: build ## Run exporter with local config
 	@ $(MAKE) --no-print-directory log-$@
 	@$(BIN_DIR)/$(PROJECT_NAME)
+
+serve: build ## Run `rfc-api serve` against compose-up'd Postgres + Meili (reads .env)
+	@ $(MAKE) --no-print-directory log-$@
+	@$(BIN_DIR)/$(PROJECT_NAME) serve
+
+work: build ## Run `rfc-api work` (sync worker) against compose-up'd Postgres + Meili (reads .env)
+	@ $(MAKE) --no-print-directory log-$@
+	@$(BIN_DIR)/$(PROJECT_NAME) work
 
 reindex: build ## Enqueue a reindex for every document and exit
 	@ $(MAKE) --no-print-directory log-$@
