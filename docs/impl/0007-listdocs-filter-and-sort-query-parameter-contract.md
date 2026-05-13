@@ -168,50 +168,14 @@ the IMPL-0006 convention).
 
 #### Tasks
 
-- [ ] **Add `ListDocsFilter` parameter to `api/openapi.yaml`.** Shape:
-  ```yaml
-  ListDocsFilter:
-    name: filter
-    in: query
-    required: false
-    description: |
-      Repeatable. Each value is `field:value`. OR within a field; AND
-      across fields. Phase 1 supports `type:<DocumentType id>`. See
-      DESIGN-0003.
-    schema:
-      type: array
-      items:
-        type: string
-        pattern: '^[a-z][a-z0-9_]*:[a-zA-Z0-9_-]+$'
-    style: form
-    explode: true
-  ```
-- [ ] **Add `ListDocsSort` parameter.**
-  ```yaml
-  ListDocsSort:
-    name: sort
-    in: query
-    required: false
-    description: |
-      Single value, fixed enum. Default is `created_desc` (today's
-      behavior). See DESIGN-0003 #OQ3.
-    schema:
-      type: string
-      enum: [created_desc, created_asc, updated_desc, updated_asc, id_desc, id_asc]
-      default: created_desc
-  ```
-- [ ] **Reference both from `listDocs`.** Extend the `parameters` list with `$ref` lines under `/api/v1/docs.get`.
-- [ ] **Document `X-Total-Count-Unfiltered` in response headers.** The spec currently declares `X-Total-Count`; add the conditional header under the same response.
-- [ ] **Add `test/contract/listdocs_filter_sort_test.go`.** Drive the in-process handler through `kin-openapi` request/response validation per the existing `contract_test.go` pattern. Assertions:
-  - Filter-only response is a strict subset of the unfiltered baseline.
-  - Sort-only response has the same multiset, order changed.
-  - Filter + sort + cursor: page 1 + page 2 stay inside the filtered+sorted view; cursor on page 2 still encodes the same sort.
-  - `filter=foo:bar` (unknown field) → 400 problem+json with the expected `detail`.
-  - `filter=type:nonexistent` → 400.
-  - `sort=weird` → 400.
-  - Cursor minted under `created_desc` + request with `sort=id_asc` → 400 cursor mismatch.
-- [ ] **Existing contract tests stay green.** Run `go test ./test/contract/...` — additive change should not break any prior assertion.
-- [ ] Run `make lint`, `make fmt`.
+- [x] **Add `ListDocsFilter` parameter to `api/openapi.yaml`.** Shape per the plan: `style: form, explode: true, schema.items pattern '^[a-z][a-z0-9_]*:[a-zA-Z0-9_-]+$'`.
+- [x] **Add `ListDocsSort` parameter.** Enum carries all six values (`created_desc`/`asc`, `updated_desc`/`asc`, `id_desc`/`asc`); default = `created_desc`.
+- [x] **Reference both from `listDocs`.** `$ref` lines added under `/api/v1/docs.get.parameters`.
+- [x] **Document `X-Total-Count-Unfiltered` in response headers.** New `XTotalCountUnfiltered` header component + a `DocumentListFilterable` response that adds it to the existing `DocumentList` shape. `listDocs` now references the new response; `listDocsByType` keeps the leaner `DocumentList` (no filter parameter, no conditional header).
+- [x] **Add `test/contract/listdocs_filter_sort_test.go`.** Four contract cases driven through `kin-openapi`: filter-only subset of baseline (with X-Total-Count-Unfiltered presence check), sort-only reorders baseline, filter+sort+cursor round-trip with real Link header extraction, and two problem-envelope cases (`status:accepted` unknown field + `type:notreal` unknown value — these pass parameter-pattern validation so the validator reaches the response envelope). The malformed-shape cases (no colon, weird sort) are intentionally pinned only in handler unit tests; kin-openapi rejects those at the request stage which is the documented and desirable behavior.
+- [x] **Link-header bug fix during Phase 4.** Pre-existing defect surfaced by the contract round-trip test: `render.formatLink` was using `r.URL.Path` which `http.StripPrefix("/api/v1")` strips, producing `</docs?...>` Link headers that 404'd against the unstripped mux. Fixed to prefer `r.RequestURI` (untouched by StripPrefix) over `r.URL.Path`, with a fall-back for non-HTTP-server invocation contexts. Removed the unused `urlPath` helper.
+- [x] **Existing contract tests stay green.** `go test ./test/contract/...` passes additive — no prior assertion changed.
+- [x] Run `make lint`, `make fmt`. Clean (0 issues).
 
 #### Success Criteria
 

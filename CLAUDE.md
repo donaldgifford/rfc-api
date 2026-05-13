@@ -72,7 +72,19 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 [impl-0006]: ./docs/impl/0006-sectionslug-consumer-side-slug-contract-implementation.md
 [inv-0002]: ./docs/investigation/0002-sectionslug-consumer-side-slug-contract.md
 
-**What's next after IMPL-0006:** RFC-0001 Phase 4 (auth via Keycloak dev / Okta prod + MCP-ready API polish). Author a fresh IMPL doc (`docz create impl …`) before writing code.
+[IMPL-0007][impl-0007] is **In Progress** (Phases 1–4 landed 2026-05-13; Phase 5 = open PR + tag minor + rfc-site coordination + close #28). Adds the listDocs filter + sort contract from DESIGN-0003:
+
+- `?filter=type:<id>` on `/api/v1/docs` — repeatable, OR-within-field, AND-across-fields. Phase 1 supports `type` only; other field names return 400 + problem+json. Unknown type ids return 400.
+- `?sort=` — fixed enum (`created_desc` default, plus `created_asc`, `updated_desc`/`asc`, `id_desc`/`asc`). Omitted = today's behavior, byte-identical headers (pinned by `TestDocsListAll_NoParams_NoUnfilteredHeader`).
+- `X-Total-Count-Unfiltered` — emitted only when at least one `filter=` is active; carries the full corpus count so clients can distinguish "filter matched zero rows" from "no documents". Wire via `render.PageInfo.TotalUnfiltered *int`.
+- Cursor envelope is versioned (`{"v":1,"s":"<sort>","k":["<value>","<id>"]}`) and carries the active sort; presenting a cursor minted under sort A with `?sort=B` returns 400. Legacy `{t,i}` cursors keep working as `sort=created_desc`.
+- New package `internal/store/list/`: `Option` functional options (`WithSort` / `WithTypes` / `WithLimit` / `WithCursor`), `Sort` enum, `Cursor` (moved out of `store/`). Store `Docs.List(ctx, opts ...list.Option)` and new `Docs.CountAll(ctx)`. Service `ListAll(ctx, limit, cursor, typeIDs, sort)`.
+- `handler.Docs` grew a `reg domain.DocumentTypeRegistry` field (`NewDocs(svc, reg)` constructor) — the registry lives at the handler layer because filter validation is a query-string concern; pushing it through the service would silently turn parse errors into "no matches" results.
+- `render.formatLink` uses `r.RequestURI` rather than `r.URL.Path` so the Link header survives `http.StripPrefix("/api/v1")`. The previous code emitted `</docs?...>` Link headers that 404'd against the unstripped mux — a real bug, not just a contract-test concern.
+
+[impl-0007]: ./docs/impl/0007-listdocs-filter-and-sort-query-parameter-contract.md
+
+**What's next after IMPL-0007:** RFC-0001 Phase 4 (auth via Keycloak dev / Okta prod + MCP-ready API polish). Author a fresh IMPL doc (`docz create impl …`) before writing code.
 
 ## Local development
 

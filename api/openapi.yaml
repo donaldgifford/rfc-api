@@ -52,13 +52,23 @@ paths:
     get:
       tags: [docs]
       summary: List documents across all types.
+      description: |
+        Cross-type list endpoint. Supports `?filter=` + `?sort=` per
+        DESIGN-0003: filter is repeatable (OR within field, AND across
+        fields) and currently accepts `type:<id>` only; sort is a
+        single value from a fixed enum, defaulting to `created_desc`.
+        Cursor + sort are cross-checked — a cursor minted under one
+        sort cannot be honored under a different sort, so changing
+        `?sort=` mid-traversal returns 400.
       operationId: listDocs
       parameters:
         - $ref: "#/components/parameters/Limit"
         - $ref: "#/components/parameters/Cursor"
+        - $ref: "#/components/parameters/ListDocsFilter"
+        - $ref: "#/components/parameters/ListDocsSort"
       responses:
         "200":
-          $ref: "#/components/responses/DocumentList"
+          $ref: "#/components/responses/DocumentListFilterable"
         "400":
           $ref: "#/components/responses/ProblemBadRequest"
 
@@ -300,10 +310,51 @@ components:
       in: query
       description: Opaque pagination cursor from a previous response's Link header.
       schema: { type: string, maxLength: 256 }
+    ListDocsFilter:
+      name: filter
+      in: query
+      required: false
+      description: |
+        Repeatable. Each value is `field:value`. OR within a field; AND
+        across fields. Phase 1 supports `type:<DocumentType id>` only;
+        other field names return 400. See DESIGN-0003.
+      style: form
+      explode: true
+      schema:
+        type: array
+        items:
+          type: string
+          pattern: "^[a-z][a-z0-9_]*:[a-zA-Z0-9_-]+$"
+    ListDocsSort:
+      name: sort
+      in: query
+      required: false
+      description: |
+        Single value, fixed enum. Default is `created_desc` (today's
+        behavior — preserved when the parameter is omitted). See
+        DESIGN-0003 #Resolved-decisions (OQ3).
+      schema:
+        type: string
+        enum:
+          - created_desc
+          - created_asc
+          - updated_desc
+          - updated_asc
+          - id_desc
+          - id_asc
+        default: created_desc
 
   headers:
     XTotalCount:
       description: Total matching documents for the request.
+      schema: { type: integer, format: int64 }
+    XTotalCountUnfiltered:
+      description: |
+        Total documents across all types, ignoring any active filter.
+        Emitted only when at least one `filter=` is active on the
+        request; absent otherwise. Lets clients distinguish "filter
+        matched zero rows" from "no documents exist at all" without
+        a follow-up request.
       schema: { type: integer, format: int64 }
     Link:
       description: RFC 8288 Link header with rel="next" / "prev" where applicable.
@@ -314,6 +365,20 @@ components:
       description: Paginated list of documents.
       headers:
         X-Total-Count: { $ref: "#/components/headers/XTotalCount" }
+        Link: { $ref: "#/components/headers/Link" }
+      content:
+        application/json:
+          schema:
+            type: array
+            items: { $ref: "#/components/schemas/Document" }
+    DocumentListFilterable:
+      description: |
+        Paginated list of documents. Same body shape as DocumentList,
+        with the additional X-Total-Count-Unfiltered header that is
+        present iff a filter is active on the request.
+      headers:
+        X-Total-Count: { $ref: "#/components/headers/XTotalCount" }
+        X-Total-Count-Unfiltered: { $ref: "#/components/headers/XTotalCountUnfiltered" }
         Link: { $ref: "#/components/headers/Link" }
       content:
         application/json:
