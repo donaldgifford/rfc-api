@@ -163,17 +163,25 @@ func TestList_SortVariants(t *testing.T) {
 		want []domain.DocumentID
 	}{
 		// created_desc: newest first = RFC-0002 → ADR-0001 → RFC-0001
-		{"created_desc", list.SortCreatedDesc,
-			[]domain.DocumentID{"RFC-0002", "ADR-0001", "RFC-0001"}},
+		{
+			"created_desc", list.SortCreatedDesc,
+			[]domain.DocumentID{"RFC-0002", "ADR-0001", "RFC-0001"},
+		},
 		// created_asc: oldest first
-		{"created_asc", list.SortCreatedAsc,
-			[]domain.DocumentID{"RFC-0001", "ADR-0001", "RFC-0002"}},
+		{
+			"created_asc", list.SortCreatedAsc,
+			[]domain.DocumentID{"RFC-0001", "ADR-0001", "RFC-0002"},
+		},
 		// id_asc: alphabetical
-		{"id_asc", list.SortIDAsc,
-			[]domain.DocumentID{"ADR-0001", "RFC-0001", "RFC-0002"}},
+		{
+			"id_asc", list.SortIDAsc,
+			[]domain.DocumentID{"ADR-0001", "RFC-0001", "RFC-0002"},
+		},
 		// id_desc: reverse alphabetical
-		{"id_desc", list.SortIDDesc,
-			[]domain.DocumentID{"RFC-0002", "RFC-0001", "ADR-0001"}},
+		{
+			"id_desc", list.SortIDDesc,
+			[]domain.DocumentID{"RFC-0002", "RFC-0001", "ADR-0001"},
+		},
 	}
 	for _, c := range cases {
 		t.Run(c.name, func(t *testing.T) {
@@ -201,7 +209,8 @@ func TestList_FilterOR_AcrossMultipleTypes(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	page, err := s.List(t.Context(),
+	page, err := s.List(
+		t.Context(),
 		list.WithTypes("rfc", "adr"),
 		list.WithLimit(10),
 	)
@@ -226,7 +235,8 @@ func TestList_CursorMatchesSort(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	page, err := s.List(t.Context(),
+	page, err := s.List(
+		t.Context(),
 		list.WithSort(list.SortIDAsc),
 		list.WithLimit(2),
 	)
@@ -249,7 +259,8 @@ func TestList_PaginationUnderSort(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	p1, err := s.List(t.Context(),
+	p1, err := s.List(
+		t.Context(),
 		list.WithSort(list.SortIDAsc),
 		list.WithLimit(1),
 	)
@@ -259,7 +270,8 @@ func TestList_PaginationUnderSort(t *testing.T) {
 	if p1.Items[0].ID != "ADR-0001" {
 		t.Fatalf("page1[0] = %q, want ADR-0001", p1.Items[0].ID)
 	}
-	p2, err := s.List(t.Context(),
+	p2, err := s.List(
+		t.Context(),
 		list.WithSort(list.SortIDAsc),
 		list.WithLimit(2),
 		list.WithCursor(p1.NextCursor),

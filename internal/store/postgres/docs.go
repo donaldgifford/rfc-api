@@ -365,7 +365,8 @@ func upsertDocument(ctx context.Context, tx pgx.Tx, doc *domain.Document) error 
 	if ext == nil {
 		ext = map[string]any{}
 	}
-	if _, err := tx.Exec(ctx, stmt,
+	if _, err := tx.Exec(
+		ctx, stmt,
 		string(doc.ID), doc.Type, doc.Title, doc.Status, doc.Body,
 		nonZeroTime(doc.CreatedAt), nonZeroTime(doc.UpdatedAt),
 		labels, ext,
@@ -480,7 +481,8 @@ func (d *Docs) UpsertDiscussion(ctx context.Context, id domain.DocumentID, disc 
 			last_synced_at = EXCLUDED.last_synced_at
 	`
 	lastActivity := nullIfZero(disc.LastActivity)
-	if _, err := tx.Exec(ctx, stmt,
+	if _, err := tx.Exec(
+		ctx, stmt,
 		string(id), nullIfEmpty(disc.URL), disc.CommentCount, lastActivity,
 	); err != nil {
 		return upstream("upsert discussion", err)
@@ -491,7 +493,8 @@ func (d *Docs) UpsertDiscussion(ctx context.Context, id domain.DocumentID, disc 
 		return upstream("clear participants", err)
 	}
 	for i, p := range disc.Participants {
-		if _, err := tx.Exec(ctx,
+		if _, err := tx.Exec(
+			ctx,
 			`INSERT INTO discussion_participants (document_id, seq, handle, name, email)
 			 VALUES ($1, $2, $3, $4, $5)`,
 			string(id), i, p.Handle,
