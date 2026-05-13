@@ -30,7 +30,8 @@ created: 2026-05-12
 - [Data Model](#data-model)
 - [Testing Strategy](#testing-strategy)
 - [Migration / Rollout Plan](#migration--rollout-plan)
-- [Open Questions](#open-questions)
+- [Resolved Decisions](#resolved-decisions)
+- [Consumer implementation notes](#consumer-implementation-notes)
 - [References](#references)
 <!--toc:end-->
 
@@ -119,7 +120,7 @@ GET /api/v1/docs?filter=type:rfc&filter=type:adr&sort=updated_desc&limit=25&curs
   type registry).
 
 **Within-field semantics.** Multiple values for the same field are **OR**.
-`filter=type:rfc&filter=type:adr` returns RFCs and ADRs. (See [OQ1](#open-questions).)
+`filter=type:rfc&filter=type:adr` returns RFCs and ADRs. (See [OQ1](#resolved-decisions).)
 
 **Cross-field semantics.** Different fields are **AND**.
 `filter=type:rfc&filter=status:accepted` returns accepted RFCs. (Decided —
@@ -136,21 +137,26 @@ change. The contract is "field+value pairs," not "exactly the `type` field."
   400.
 - Unknown value for a known field (e.g. `type:nonexistent`) → 400.
   Alternative is to treat as "empty result set"; the issue picks 400 and
-  this design follows it. (See [OQ2](#open-questions).)
+  this design follows it. (See [OQ2](#resolved-decisions).)
 
 ### Sort semantics
 
-**Enum.** Phase 1 defines exactly four values:
+**Enum.** Phase 1 defines six values. The first four are what rfc-site's
+Phase 7b dropdown emits; `created_desc` / `created_asc` are included so
+callers can explicitly pin today's order rather than rely on the implicit
+default.
 
-- `updated_desc` *(matches today's behavior — see [OQ3](#open-questions))*
+- `created_desc` — **default**, equivalent to today's `ORDER BY created_at DESC, id ASC`
+- `created_asc`
+- `updated_desc`
 - `updated_asc`
 - `id_desc`
 - `id_asc`
 
-A missing `sort=` parameter falls back to the default; this is a no-op,
-preserving backward compatibility.
+A missing `sort=` parameter falls back to `created_desc`; this is a no-op,
+preserving backward compatibility (see [Resolved Decisions #OQ3](#oq3-default-sort--created_desc-)).
 
-**Future extension.** Adding `created_desc`, `title_asc`, etc. is purely
+**Future extension.** Adding `title_asc`, `status_desc`, etc. is purely
 additive; the enum grows. No breaking-change pressure.
 
 ### Cursor encoding under variable sort
@@ -180,8 +186,9 @@ store layer can:
   the previous page.
 
 Old cursors minted before this lands have no `v`/`s`/`k` — they survive as
-`(created_at, id)` under `sort=updated_desc` by detecting the legacy shape
-during decode. (See [OQ4](#open-questions).)
+`(created_at, id)` under `sort=created_desc` (the new default, which matches
+today's ordering) by detecting the legacy shape during decode. (See
+[OQ4](#resolved-decisions).)
 
 ### Total-count headers
 
@@ -196,7 +203,7 @@ would be identical and the existing single header suffices.
 
 The header is purely informational; it does not affect pagination math.
 Computing it adds one extra `COUNT(*)` per request — acceptable for the
-directory page's traffic profile, but worth pinning. (See [OQ5](#open-questions).)
+directory page's traffic profile, but worth pinning. (See [OQ5](#resolved-decisions).)
 
 ### Error contract
 
@@ -239,13 +246,14 @@ ListDocsSort:
   in: query
   required: false
   description: |
-    Single value, fixed enum. Default is `updated_desc`. Adding a sort
-    invalidates cursors that were minted under a different sort — the
-    server returns 400 on mismatch rather than silently re-sorting.
+    Single value, fixed enum. Default is `created_desc` (today's
+    behavior — see DESIGN-0003 #OQ3). Changing the sort invalidates
+    cursors that were minted under a different sort — the server returns
+    400 on mismatch rather than silently re-sorting.
   schema:
     type: string
-    enum: [updated_desc, updated_asc, id_desc, id_asc]
-    default: updated_desc
+    enum: [created_desc, created_asc, updated_desc, updated_asc, id_desc, id_asc]
+    default: created_desc
 ```
 
 **listDocs parameter list** grows:
@@ -330,101 +338,89 @@ Suggested ordering (will be pinned in the consuming IMPL doc):
 No reindex or migration is required — this is an HTTP-surface change
 only, not a data-model change.
 
-## Open Questions
+## Resolved Decisions
 
-### OQ1: Within-field filter semantics — OR or AND?
+All eight OQs are resolved. rfc-site consumer review (2026-05-13) agreed
+on every recommendation and pushed back on OQ3 specifically — see the
+rationale below.
 
-**a)** **OR within field** (e.g. `filter=type:rfc&filter=type:adr` → RFC ∪ ADR).
-Matches the obvious UI metaphor (multi-select), matches REST idioms,
-matches what rfc-site's `<DirectoryToolbar>` will produce. *Recommended.*
+### OQ1: Within-field filter semantics — **OR** ✓
 
-**b)** **AND within field** (intersect) — nonsensical for `type:` since a
-single document has exactly one type. Would only matter for set-valued
-fields like `author:` in the future, and even there OR is the obvious
-default for a "show me anything by Alice or Bob" UI.
+Multiple values for the same field are **OR**. `filter=type:rfc&filter=type:adr`
+returns RFC ∪ ADR. Matches the multi-select UI metaphor, matches REST
+idioms, matches what rfc-site's `<DirectoryToolbar>` will emit.
 
-**c)** **Field-specific** — declare it per field. More flexible but more
-surface to specify and document. Likely YAGNI.
+### OQ2: Unknown filter value — **400** ✓
 
-### OQ2: Unknown filter value — 400 or empty result?
+Unknown field name or unknown value for a known field returns 400 with
+`problem.detail` naming the offending input. Aligns with how `searchDocs`
+treats unknown `?type=` today; surfaces typos loudly.
 
-**a)** **400** with `problem.detail` naming the unknown value. Issue #28
-picked this. Aligns with how `searchDocs` currently treats unknown
-`?type=`. Surfaces typos loudly.
+### OQ3: Default sort — **`created_desc`** ✓
 
-**b)** **Empty result, 200** — treats `filter=type:zzz` like a perfectly
-valid query that happens to match nothing. Friendlier to clients that
-echo URL params from user input, but masks bugs.
+The default sort stays `created_desc` (today's behavior). The store-layer
+hardcode is **not** flipped. rfc-site's `<DirectoryToolbar>` explicitly
+emits `?sort=updated_desc` when the user picks "Recently updated".
 
-### OQ3: Default sort — `updated_desc` or `created_desc`?
+**Why:** rfc-site's existing `tests/api/indexRouteRender.test.tsx`
+render-snapshot assertions depend on the current `created_at DESC`
+ordering against MSW fixtures. Picking `updated_desc` as the new default
+would silently change those snapshots — a non-trivial migration on the
+consumer side for no real upside, since the dropdown sends the sort param
+explicitly whenever the user wants the alternate ordering. The
+"preserve-existing-callers" framing wins.
 
-**a)** **`updated_desc`** — matches what a "what's been touched recently"
-directory view wants. *But* this is **not** today's behavior — today's
-default is `created_at DESC`. Picking this *as the new default* shifts
-existing-caller output silently.
+### OQ4: Cursor compatibility — **versioned envelope** ✓
 
-**b)** **`created_desc`** — preserves today's behavior exactly; rfc-site
-explicitly opts into `?sort=updated_desc`. No silent change for existing
-callers.
+`{"v":1,"s":"<sort>","k":[<sort-col-val>,<id>]}`. Old cursors (minted
+before this lands) lack `v`/`s`/`k` and decode as the legacy
+`(created_at, id)` shape under `sort=created_desc`. Cursor-sort mismatch
+(cursor encodes one sort, request asks for another) returns 400 — never
+silently re-sort.
 
-**c)** Document both as values, make `updated_desc` the documented default
-*and* flip the store-layer hardcoded order to match. Acceptable as a
-visible (but minor) behavior shift on a `minor` release with the
-behavior-change call-out in the changelog.
+### OQ5: Total-count headers — **conditional `X-Total-Count-Unfiltered`** ✓
 
-### OQ4: Cursor compatibility across this change
+`X-Total-Count` always returns the (filtered-view) total, matching its
+current semantics. When at least one `filter=` is active, also emit
+`X-Total-Count-Unfiltered` carrying the unscoped total so rfc-site can
+render "(N of M shown)". When no filter is active, only the single
+existing header is emitted — zero visible change for unfiltered callers.
 
-**a)** **Versioned envelope** (`{"v":1,"s":…,"k":[…]}`). Old cursors lack
-`v`/`s` and decode as legacy `(created_at, id)` under `sort=updated_desc`.
-Clean. *Recommended.*
+### OQ6: Validation strictness — **strict 400** ✓
 
-**b)** **Hard break** — every cursor minted before this lands becomes
-invalid. Acceptable only if we know there are no long-lived bookmarked
-cursors in the wild. Today there aren't, but I'd rather not bake the
-assumption in.
+Reject `filter=type:` (trailing colon, empty value) with 400. Matches the
+strict-input posture of the rest of the API.
 
-**c)** **Sort-agnostic cursor** — encode every sortable column in the
-cursor so a single payload works under any sort. Larger, less clear, and
-forces the decoder to know about every future column.
+### OQ7: `listDocsByType` deprecation — **no, coexist** ✓
 
-### OQ5: Total-count header shape
-
-**a)** Always return `X-Total-Count` (current behavior, but reflects the
-filtered view); add `X-Total-Count-Unfiltered` only when a filter is
-active. *Recommended* — minimum visible change for unfiltered callers.
-
-**b)** Always return both headers. Simpler conditional in handlers but
-costs a redundant COUNT(*) on every cross-type list request.
-
-**c)** Roll both into a single composite header — overengineered.
-
-### OQ6: Validation strictness for empty values
-
-**a)** Reject `filter=type:` (trailing colon, empty value) with 400.
-*Recommended.* Matches the strict-input posture of the rest of the API.
-
-**b)** Treat empty value as "any" — equivalent to omitting the filter for
-that field. Friendlier but adds a special case to the parser.
-
-### OQ7: Does `listDocsByType` get deprecated?
-
-**a)** **No.** Path-scoped per-type list is the natural REST shape for
+Path-scoped per-type list `/api/v1/{type}/` is the natural REST shape for
 "all docs of one type"; `filter=type:X` is the natural shape for "docs
-across N selected types". They coexist; rfc-site picks per call site.
-*Recommended.*
+across N selected types". Both stay. rfc-site picks per call site.
 
-**b)** **Yes, soft-deprecate.** Mark `listDocsByType` deprecated in OpenAPI
-and have rfc-site migrate to `?filter=type:X`. Reduces duplication but
-adds noise to the directory page's loader for the common single-type case.
+### OQ8: Sort on `listDocsByType` — **no, YAGNI** ✓
 
-### OQ8: Should `?sort=` also apply to `listDocsByType`?
+Defer until a concrete UI need shows up. The cursor envelope's sort
+plumbing exists in `listDocs`-handler code only; `listDocsByType` keeps
+its current minimal contract.
 
-**a)** **Yes** — sort is an orthogonal concern; both endpoints benefit.
-Slight extra implementation cost, but the cursor envelope already has
-to handle sort across `listDocs`, so reusing it here is cheap.
+## Consumer implementation notes
 
-**b)** **No, separate concern.** Keep `listDocsByType` minimal. Defer
-until a concrete UI need shows up. *Recommended* — YAGNI.
+Surfaced during the rfc-site review pass — non-blocking for the design,
+but worth pinning here so the downstream IMPL doesn't lose them.
+
+- **Cursor invalidation on sort change.** When the user changes the sort
+  dropdown mid-pagination, the existing `?cursor=…` becomes invalid and
+  this design returns 400 (`urn:rfc-api:problem:bad-request` with
+  `detail: "cursor sort mismatch: …"`). rfc-site's loader must clear
+  `cursor` from the URL state whenever `sort` changes — straightforward
+  with `useSearchParams`. Documenting it here so rfc-site IMPL-0004 §7b
+  pins it in its loader logic, not as a runtime surprise.
+- **Conditional `X-Total-Count-Unfiltered` in the UI.** The "(N of M
+  shown)" treatment renders the "of M" segment only when at least one
+  filter is active (the header is only emitted in that case per OQ5).
+  When no filter is active, fall back to the single `X-Total-Count`
+  value and skip the "of M" suffix. rfc-site IMPL-0004 §7b should encode
+  this conditional in the toolbar's results-count subcomponent.
 
 ## References
 
