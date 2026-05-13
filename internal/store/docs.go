@@ -13,6 +13,7 @@ import (
 	"time"
 
 	"github.com/donaldgifford/rfc-api/internal/domain"
+	"github.com/donaldgifford/rfc-api/internal/store/list"
 )
 
 // ListQuery names the parameters a list-shaped store call accepts.
@@ -27,11 +28,22 @@ type ListQuery struct {
 	Cursor *Cursor
 }
 
-// Cursor is the decoded pagination cursor. Documents are sorted
-// (CreatedAt DESC, ID ASC) per DESIGN-0001 #API surface; the cursor
-// captures the last row on the previous page so the store can
-// continue from the right position without offsets.
+// Cursor is the decoded pagination cursor. The cursor captures the
+// last row on the previous page so the store can continue from the
+// right position without offsets.
+//
+// Sort names the ordering the cursor was minted under. The handler
+// rejects cross-sort cursor reuse with 400 (DESIGN-0003 #Error-contract).
+// A zero Sort is treated as list.SortCreatedDesc for backward compat
+// with cursors minted before IMPL-0007.
+//
+// CreatedAt holds the sort-column value for time-based sorts
+// (created_*, updated_*). For id-based sorts it is the zero time and
+// the keyset comparison runs on ID alone. The historical field name
+// stays in Phase 1 to keep the diff small; Phase 2 may rename it to
+// SortValue if a clearer name reads better at the call sites.
 type Cursor struct {
+	Sort      list.Sort
 	CreatedAt time.Time
 	ID        domain.DocumentID
 }
