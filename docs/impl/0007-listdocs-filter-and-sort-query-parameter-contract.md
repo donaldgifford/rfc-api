@@ -1,7 +1,7 @@
 ---
 id: IMPL-0007
 title: "listDocs filter and sort query parameter contract"
-status: Draft
+status: In Progress
 author: Donald Gifford
 created: 2026-05-13
 ---
@@ -9,7 +9,7 @@ created: 2026-05-13
 
 # IMPL 0007: listDocs filter and sort query parameter contract
 
-**Status:** Draft
+**Status:** In Progress
 **Author:** Donald Gifford
 **Date:** 2026-05-13
 
@@ -84,12 +84,12 @@ unit tests can drive it without spinning a server.
 
 #### Tasks
 
-- [ ] **Filter parser.** Add an unexported `parseFilters([]string) ([]filter, error)` in `internal/server/handler/listquery.go` (OQ1=a). Validates the `field:value` shape; rejects empty field, empty value, missing colon, multiple colons. Returns a typed slice the store can consume. Wraps malformed input with a package-local `errBadFilter` sentinel.
-- [ ] **Sort enum.** Add a `Sort` type (string newtype) and `ParseSort(string) (Sort, error)` that accepts the six values from DESIGN-0003 #Sort-semantics. Empty input returns the default `SortCreatedDesc`. Unknown values wrap a package-local `ErrBadSort` sentinel.
+- [x] **Filter parser.** Add an unexported `parseFilters([]string) ([]filter, error)` in `internal/server/handler/listquery.go` (OQ1=a). Validates the `field:value` shape; rejects empty field, empty value, missing colon, multiple colons. Returns a typed slice the store can consume. Wraps malformed input with a package-local `errBadFilter` sentinel.
+- [x] **Sort enum.** Add a `Sort` type (string newtype) and `ParseSort(string) (Sort, error)` that accepts the six values from DESIGN-0003 #Sort-semantics. Empty input returns the default `SortCreatedDesc`. Unknown values wrap `list.ErrInvalidSort`; the handler-edge `parseSort` further wraps with package-local `errBadSort`. Type lives in `internal/store/list/` (the new package OQ3 introduces) since Phase 2 needs the store to dispatch on it; the parser in `listquery.go` is a thin wrapper.
 - [ ] **Cursor envelope upgrade.** In `internal/server/cursor`, add a versioned encode path emitting `{"v":1,"s":<sort>,"k":[<value>,<id>]}`. The legacy decode path (no `v` / `s` / `k` field present) survives as `(created_at, id)` under `SortCreatedDesc`. Add a `Cursor.Sort()` accessor so the handler can detect cursor-sort mismatch.
 - [ ] **Cursor-sort mismatch error.** When the cursor decodes to one sort and the request asks for a different one, encode/decode helpers return a wrapped package-local `errCursorSortMismatch` sentinel. The handler edge wraps with `domain.ErrInvalidInput` so `httperr.classify` maps it to 400 — no new domain sentinel required (OQ2=a; see DESIGN-0003 #Error-contract and [Resolved Decisions #OQ2](#oq2-reuse-domainerrinvalidinput-with-package-local-sentinels-)).
-- [ ] **Unit tests for the filter parser.** Cover: every malformed shape (no colon, multi-colon, empty field, empty value, leading/trailing whitespace), the happy path (single + repeated values, distinct fields). Table-driven, parallel.
-- [ ] **Unit tests for the sort enum.** Each of the six values round-trips. Empty input returns the default. Unknown value returns `ErrBadSort` + message.
+- [x] **Unit tests for the filter parser.** Cover: every malformed shape (no colon, multi-colon, empty field, empty value, leading/trailing whitespace), the happy path (single + repeated values, distinct fields). Table-driven, parallel.
+- [x] **Unit tests for the sort enum.** Each of the six values round-trips. Empty input returns the default. Unknown value returns `ErrBadSort` + message. Plus a `TestDefaultSort_PinsCreatedDesc` guard so a future change to the default trips a test instead of silently shifting behavior for unfiltered callers.
 - [ ] **Unit tests for the cursor envelope.** Round-trip every sort variant. Legacy decode (a cursor minted by today's encoder) returns the right `(time, id)` tuple under `SortCreatedDesc`. Mismatch on decode returns `ErrCursorSortMismatch`.
 - [ ] Run `make lint` and `make fmt`; fix any warnings.
 
