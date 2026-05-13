@@ -27,7 +27,7 @@ created: 2026-05-13
 - [File Changes](#file-changes)
 - [Testing Plan](#testing-plan)
 - [Dependencies](#dependencies)
-- [Open Questions](#open-questions)
+- [Resolved Decisions](#resolved-decisions)
 - [References](#references)
 <!--toc:end-->
 
@@ -84,10 +84,10 @@ unit tests can drive it without spinning a server.
 
 #### Tasks
 
-- [ ] **Filter parser.** Add an unexported `parseFilters([]string) ([]Filter, error)` in `internal/server/handler/listquery.go` (or a new `internal/server/listquery/` package — see [OQ1](#open-questions)). Validates the `field:value` shape; rejects empty field, empty value, missing colon, multiple colons. Returns a typed slice the store can consume. Wraps malformed input with a package-local `ErrBadFilter` sentinel.
+- [ ] **Filter parser.** Add an unexported `parseFilters([]string) ([]filter, error)` in `internal/server/handler/listquery.go` (OQ1=a). Validates the `field:value` shape; rejects empty field, empty value, missing colon, multiple colons. Returns a typed slice the store can consume. Wraps malformed input with a package-local `errBadFilter` sentinel.
 - [ ] **Sort enum.** Add a `Sort` type (string newtype) and `ParseSort(string) (Sort, error)` that accepts the six values from DESIGN-0003 #Sort-semantics. Empty input returns the default `SortCreatedDesc`. Unknown values wrap a package-local `ErrBadSort` sentinel.
 - [ ] **Cursor envelope upgrade.** In `internal/server/cursor`, add a versioned encode path emitting `{"v":1,"s":<sort>,"k":[<value>,<id>]}`. The legacy decode path (no `v` / `s` / `k` field present) survives as `(created_at, id)` under `SortCreatedDesc`. Add a `Cursor.Sort()` accessor so the handler can detect cursor-sort mismatch.
-- [ ] **Cursor-sort mismatch error.** When the cursor decodes to one sort and the request asks for a different one, encode/decode helpers return a wrapped `ErrCursorSortMismatch` sentinel. The handler edge wraps with `domain.ErrInvalidInput` so `httperr.classify` maps it to 400 — no new domain sentinel required (see DESIGN-0003 #Error-contract and [OQ2](#open-questions)).
+- [ ] **Cursor-sort mismatch error.** When the cursor decodes to one sort and the request asks for a different one, encode/decode helpers return a wrapped package-local `errCursorSortMismatch` sentinel. The handler edge wraps with `domain.ErrInvalidInput` so `httperr.classify` maps it to 400 — no new domain sentinel required (OQ2=a; see DESIGN-0003 #Error-contract and [Resolved Decisions #OQ2](#oq2-reuse-domainerrinvalidinput-with-package-local-sentinels-)).
 - [ ] **Unit tests for the filter parser.** Cover: every malformed shape (no colon, multi-colon, empty field, empty value, leading/trailing whitespace), the happy path (single + repeated values, distinct fields). Table-driven, parallel.
 - [ ] **Unit tests for the sort enum.** Each of the six values round-trips. Empty input returns the default. Unknown value returns `ErrBadSort` + message.
 - [ ] **Unit tests for the cursor envelope.** Round-trip every sort variant. Legacy decode (a cursor minted by today's encoder) returns the right `(time, id)` tuple under `SortCreatedDesc`. Mismatch on decode returns `ErrCursorSortMismatch`.
@@ -114,11 +114,11 @@ double) implement the same surface.
 
 #### Tasks
 
-- [ ] **Extend the store interface.** `store.Docs.List` (or whatever the current method is named) grows a `ListOptions` struct argument carrying `Sort`, `TypeIDs []string`, `Limit`, `Cursor`. Single-struct args fix the gocritic `hugeParam` rule at 80 bytes — verify the resulting struct stays under that or take it by pointer (see [OQ3](#open-questions)).
-- [ ] **Postgres `List` implementation.** Parameterize the SQL: pick the ORDER BY based on `Sort`; add `AND type = ANY($N::text[])` to the WHERE when `TypeIDs` is non-empty; pick the keyset comparison based on the active sort key. Five paths consolidate to one templated builder, or stay as six SQL constants if that reads cleaner (see [OQ4](#open-questions)).
+- [ ] **Extend the store interface with variadic functional options** (OQ3=b). New `internal/store/list/` package exports `Option`, `Sort`, the `WithSort` / `WithTypes` / `WithLimit` / `WithCursor` constructors, and the package-internal `config` struct that holds the assembled state. `store.Docs.List(ctx, opts ...list.Option)` replaces today's positional `List(ctx, limit, cursor)` signature; existing callers update to `store.List(ctx, list.WithLimit(n), list.WithCursor(c))`.
+- [ ] **Postgres `List` implementation.** Six literal SQL constants (OQ4=b), selected by a switch on `(sort, hasFilter)`. Each constant uses the right ORDER BY + keyset comparison + (conditional) `AND type = ANY($N::text[])`. No templated builder; matches the existing literal-SQL style in `docs.go`.
 - [ ] **Index inventory.** Verify `(updated_at DESC, id ASC)` and `(updated_at ASC, id ASC)` and `(id ASC)` / `(id DESC)` indexes already exist via `\d documents` against a fresh compose-up Postgres. If any are missing, add a forward-only migration under `db/migrations/`. The working assumption is the `(created_at DESC, id ASC)` from IMPL-0002 is the only one currently present, so 2–3 migrations may be needed.
 - [ ] **Memory store implementation.** Update `internal/store/memory` (test-only fake) to match the new interface. Sort + filter applied in Go, not SQL. Keeps the handler and contract test suites driveable without a Postgres dependency.
-- [ ] **Unfiltered-count helper.** Add a `Docs.CountAll(ctx)` (or extend the existing total-count seam) so the handler can compute the `X-Total-Count-Unfiltered` value when at least one filter is active. Implementation: single `SELECT count(*) FROM documents` (see [OQ5](#open-questions) for the alternative of "count via the same query path with no filter").
+- [ ] **Unfiltered-count helper.** Add a `Docs.CountAll(ctx)` (OQ5=a). Single `SELECT count(*) FROM documents`. Handler calls it only when at least one filter is active.
 - [ ] **Unit tests for the memory store.** Cover every (sort × filter × cursor) combination. Distinct sets for distinct sorts; filter-on subset; cursor advances correctly across each sort.
 - [ ] **Integration tests for the Postgres store.** Build-tagged `integration` tests under `internal/store/postgres/*_test.go` that seed 30+ rows across at least 3 types and traverse pages under each sort+filter combination. Assert cursor stability under concurrent ingest is preserved (existing IMPL-0002 invariant) — add a goroutine that inserts during traversal and assert no duplicates / no skips in the result stream.
 - [ ] Run `make lint`, `make fmt`, `make test-integration`.
@@ -144,7 +144,7 @@ with filter+sort preserved in the `rel=next` / `rel=prev` URLs.
 - [ ] **Parse query in `internal/server/handler/docs.go`.** Read `r.URL.Query()` for `filter[]` (repeating) + `sort` + existing `limit` / `cursor`. Call the Phase 1 parsers; wrap all `ErrBad*` with `domain.ErrInvalidInput` at the handler edge.
 - [ ] **Validate filter values against the type registry.** For `filter=type:<id>`, look up the type id against `domain.Registry` (already threaded through the handler dep struct); reject unknown ids with `domain.ErrInvalidInput` + `detail: "unknown type: <id>"`.
 - [ ] **Cursor-sort cross-check.** If both `?cursor=` and `?sort=` are present and the cursor's sort doesn't match the request's sort, return 400 with `detail: "cursor sort mismatch: cursor=<a>, request=<b>"`. Sourced from Phase 1's `ErrCursorSortMismatch`.
-- [ ] **Call the store with `ListOptions`.** Pass through the parsed `Sort`, `TypeIDs`, `Limit`, `Cursor`. Existing dependency injection of `store.Docs` is reused; no new constructor wiring needed.
+- [ ] **Call the store with the functional-option set.** `store.List(ctx, list.WithSort(s), list.WithTypes(t...), list.WithLimit(n), list.WithCursor(c))`. Existing dependency injection of `store.Docs` is reused; no new constructor wiring needed.
 - [ ] **`X-Total-Count` header.** Set to the filtered total (today's semantics — current behavior preserved when no filter is active).
 - [ ] **`X-Total-Count-Unfiltered` header.** Emit only when at least one `filter=` is active. Value comes from the Phase 2 `CountAll` helper. When no filter is active, header is omitted entirely (zero visible change for unfiltered callers).
 - [ ] **Link-header preservation.** Update the `rel=next` / `rel=prev` URL builder to include every active `filter=` value (repeated) + `sort=` (single). The next-page cursor is minted with the *same* sort the request used, so cursor + sort stay aligned across page traversal.
@@ -262,15 +262,17 @@ loop with rfc-site.
 
 | File | Action | Description |
 |------|--------|-------------|
-| `internal/server/handler/listquery.go` (or `internal/server/listquery/`) | Create | Filter parser + sort enum + their unit tests. See OQ1. |
+| `internal/server/handler/listquery.go` | Create | Filter parser + sort enum + their unit tests. Handler-local, unexported types (OQ1=a). |
+| `internal/store/list/list.go` | Create | New package: `Option` functional-option type, `Sort` enum, `WithSort` / `WithTypes` / `WithLimit` / `WithCursor` constructors, internal `config` accumulator (OQ3=b). |
+| `internal/store/list/list_test.go` | Create | Unit tests for the options package: empty options → defaults, each `With*` mutates only its slot, sort enum round-trips. |
 | `internal/server/cursor/cursor.go` | Modify | Versioned envelope (`{"v":1,"s":…,"k":[…]}`); legacy decode path; `Sort()` accessor. |
 | `internal/server/cursor/cursor_test.go` | Modify | Round-trip every sort variant; legacy decode; mismatch detection. |
 | `internal/server/handler/docs.go` | Modify | Parse + validate filter/sort; cursor-sort cross-check; Link-header preservation; conditional `X-Total-Count-Unfiltered`. |
 | `internal/server/handler/docs_test.go` | Modify | New cases for filter/sort happy paths + every malformed input. |
-| `internal/store/store.go` | Modify | Extend `Docs.List` to take `ListOptions`. |
-| `internal/store/postgres/docs.go` | Modify | Parameterize ORDER BY + WHERE on `Sort` + `TypeIDs`; six (sort × filter) keyset queries. |
-| `internal/store/postgres/docs_test.go` | Modify | Integration tests across every (sort × filter × cursor) combination; concurrent-ingest stability. |
-| `internal/store/memory/docs.go` | Modify | Mirror the new `List` interface for test doubles. |
+| `internal/store/store.go` | Modify | `Docs.List(ctx, opts ...list.Option)` signature; add `Docs.CountAll(ctx)` (OQ5=a). |
+| `internal/store/postgres/docs.go` | Modify | Six literal SQL constants for `(sort × filter-present)` (OQ4=b); `CountAll` implementation. |
+| `internal/store/postgres/docs_test.go` | Modify | Integration tests across every (sort × filter × cursor) combination; concurrent-ingest stability (OQ6=a). |
+| `internal/store/memory/docs.go` | Modify | Full parity: sort + filter + cursor across every variant (OQ8=a). |
 | `db/migrations/000NN_*.sql` | Create (conditional) | Indexes for `updated_at` and `id` keysets if missing. |
 | `api/openapi.yaml` | Modify | New `ListDocsFilter` + `ListDocsSort` parameters; reference from `listDocs`; document `X-Total-Count-Unfiltered`. |
 | `test/contract/listdocs_filter_sort_test.go` | Create | Contract test covering filter/sort/cursor round-trips + error envelopes. |
@@ -300,171 +302,84 @@ loop with rfc-site.
 
 - None. This work can land independently of any in-flight rfc-api change.
 
-## Open Questions
+## Resolved Decisions
 
-### OQ1: Where do the filter parser + sort enum live?
+All 8 OQs resolved during the 2026-05-13 review pass. Where the
+resolution overrides a stated lean or a codebase convention, the
+rationale is captured below so a future reader can trace the call.
 
-**a)** **`internal/server/handler/listquery.go`** — sits next to the
-handler that consumes it; matches the codebase's pattern of small
-unexported helpers inside `handler/` (cf. the existing `parseListParams`
-helper in `docs.go`). Cheap, no new package, low friction.
+### OQ1: Filter parser + sort enum live in **`internal/server/handler/listquery.go`** ✓
 
-**b)** **New `internal/server/listquery/` package** — gives the
-filter/sort types a clean import path for the contract test to reach
-without depending on `handler/` package internals. Mirrors what
-IMPL-0006 did with `internal/slug/` (factored out so `test/contract/`
-could import). Heavier; a whole package for ~150 lines of code.
+Handler-local file, unexported types. Matches the existing pattern of
+small helpers inside `handler/` (cf. `parseListParams` in `docs.go`). No
+new package, no test-import gymnastics — the contract test asserts at
+the HTTP layer through `BuildMainHandler`, not at the type-construction
+layer.
 
-**c)** **`internal/domain/`** — promote `Filter` and `Sort` to first-class
-domain types alongside `Document` and `DocumentType`. Best for reuse if
-search/index/worker ever grow filtering, but probably YAGNI for Phase 1
-where only `listDocs` uses them.
+### OQ2: Reuse `domain.ErrInvalidInput` with package-local sentinels ✓
 
-*My lean: (a)* — the types are HTTP-shaped (parsed from query strings,
-validated against URL conventions), so they belong on the handler side.
-The contract test imports the handler's BuildMainHandler already and
-asserts behavior at the HTTP layer, not at the type-construction layer,
-so the package-internal types don't need to be exported.
+`listquery` adds package-local `ErrBadFilter`, `ErrBadSort`,
+`ErrCursorSortMismatch` sentinels for in-package classification, then
+wraps with `domain.ErrInvalidInput` at the handler edge. This mirrors
+the existing `cursor.ErrInvalid` → `domain.ErrInvalidInput` flow.
+**No** new domain sentinel and **no** `httperr.classify` case is
+added — the existing 400 → problem+json envelope carries the wrapped
+detail message and that's enough for the client.
 
-### OQ2: New domain sentinel or reuse `ErrInvalidInput`?
+### OQ3: Store `List` takes **variadic functional options** ✓
 
-DESIGN-0003 floated `domain.ErrBadFilter` + `domain.ErrCursorSortMismatch`
-as new sentinels. Inspecting the codebase, `domain.ErrInvalidInput` is
-the catch-all for 400-class errors and already covers "bad cursor",
-"out-of-range limit", "unknown type id" per its docstring.
+```go
+docs, next, err := store.List(ctx,
+    list.WithSort(list.SortUpdatedDesc),
+    list.WithTypes("rfc", "adr"),
+    list.WithLimit(25),
+    list.WithCursor(c),
+)
+```
 
-**a)** **Reuse `domain.ErrInvalidInput`** with package-local
-`listquery.ErrBadFilter` + `listquery.ErrBadSort` +
-`listquery.ErrCursorSortMismatch` sentinels for in-package classification.
-Wrap with `domain.ErrInvalidInput` at the handler edge. Matches the
-existing cursor package pattern (`cursor.ErrInvalid` → wrapped with
-`domain.ErrInvalidInput`). No `httperr.classify` change required.
+**Why this overrides my recommendation (a, struct arg).** The codebase
+historically uses struct-arg signatures (`server.New(*Deps)`,
+`middleware.CORS(*CORSConfig)`). Donald's explicit guidance during
+review: *"we should always move towards go idiomatic code when its time
+to, and its time."* Functional options are the more idiomatic Go
+pattern for an extensible optional-knob surface; adopting them on a
+*new* API surface (rather than churning every existing struct arg) is
+the natural pivot point. Don't retrofit existing struct-arg call sites
+elsewhere — leave them until they're touched for unrelated reasons.
 
-**b)** **Add new domain sentinels** — `domain.ErrBadFilter`,
-`domain.ErrCursorSortMismatch`. Requires `httperr.classify` cases too.
-Surfaces the failure mode more precisely in domain code but doesn't
-materially help the client (the response is still 400 problem+json with
-the wrapped detail message).
+### OQ4: Six literal SQL constants, not a templated builder ✓
 
-*My lean: (a)* — the existing one-sentinel-per-class pattern is
-deliberate (per `internal/domain/errors.go` comment: "broad-grained" and
-"failure modes one callers need to branch on"). Filter parse failures
-and sort mismatches aren't a class of failure callers need to branch on
-distinctly from "bad cursor" or "unknown type" — they all flow through
-the same 400 + problem+json envelope.
+`internal/store/postgres/docs.go` keeps SQL literal. Pick the query
+string with a switch on `(Sort, hasFilter)`. Six (sort) × two (filter
+present / absent) = 12 constants — paste-into-psql friendly, matches
+the existing style, and the repetition is bounded.
 
-### OQ3: Store `List` argument shape
+### OQ5: Dedicated `Docs.CountAll(ctx)` helper ✓
 
-**a)** **Single `ListOptions` struct** with `Sort`, `TypeIDs`, `Limit`,
-`Cursor`. Passed by value or pointer based on the gocritic `hugeParam`
-threshold (80 bytes — verify post-implementation). The struct grows
-additively as new filter fields are added.
+Single `SELECT count(*) FROM documents`. The handler calls it only when
+at least one `filter=` is active, populating `X-Total-Count-Unfiltered`
+conditionally. Distinct concern, distinct query — easy to reason about,
+easy to cache later if it matters.
 
-**b)** **Variadic functional options** —
-`store.Docs.List(ctx, WithSort(s), WithTypes(t), WithLimit(n), WithCursor(c))`.
-More idiomatic-Go-modern but adds noise to call sites that pass nothing,
-and the codebase doesn't already use this pattern anywhere.
+### OQ6: Concurrent-ingest stability test lives in **`internal/store/postgres/docs_test.go`** ✓
 
-**c)** **Positional args** —
-`store.Docs.List(ctx, sort, typeIDs, limit, cursor)`. Simple, but every
-new filter is a breaking signature change.
+Same `//go:build integration` tag as the existing IMPL-0002 invariant
+tests. Tests the store-layer keyset invariant where the seam lives,
+not redundantly at the HTTP layer.
 
-*My lean: (a)* — matches the codebase's existing struct-arg pattern
-(e.g. `server.New(*Deps)`, `middleware.CORS(*CORSConfig)`).
+### OQ7: No `?sort=` on `listDocsByType` ✓
 
-### OQ4: Postgres query construction — templated builder or six SQL constants?
+Keep DESIGN-0003 OQ8's resolution. The plumbing is cheap to add later
+in a 50-line follow-up PR if rfc-site grows a concrete UI need;
+reopening the decision now would just churn the design coherence.
 
-**a)** **Single templated query builder** that picks the ORDER BY +
-keyset comparison based on `Sort`. ~50 lines of dispatch logic; one place
-to update when a new sort key is added.
+### OQ8: Memory store reaches **full parity** with Postgres ✓
 
-**b)** **Six (sort) × two (filter present / absent) = 12 SQL constants**,
-selected with a switch. More repetition, but every variant is a literal
-SQL string you can paste into `psql` to debug, which is friendlier when
-something misbehaves at 3am.
-
-**c)** **A small DSL** (e.g. squirrel, goqu) — full abstraction. Not in
-the codebase today; introducing it for this is too much.
-
-*My lean: (b)* — six constants are within tolerable repetition, the
-codebase prefers literal SQL (`internal/store/postgres/docs.go` already
-inlines its query strings), and "paste into `psql`" is genuinely valuable
-when debugging keyset edge cases.
-
-### OQ5: How is `X-Total-Count-Unfiltered` computed?
-
-**a)** **Dedicated `Docs.CountAll(ctx)` helper.** Single
-`SELECT count(*) FROM documents`. Cheap; one extra query per filtered
-request; trivial to cache later if it matters.
-
-**b)** **Reuse the existing total-count seam.** The current handler
-issues a count query for `X-Total-Count`; conditionally issue a second
-copy with the type filter stripped. Slightly more elegant but tightly
-couples the unfiltered count to the filtered-count code path.
-
-**c)** **Skip until needed.** Don't emit the header in Phase 1; defer
-to a follow-up IMPL once rfc-site's UI is built and actually consuming
-it.
-
-*My lean: (a)* — distinct concern, distinct query, easy to reason about.
-Per-request cost is one extra COUNT against an indexed table; not a hot
-path.
-
-### OQ6: Concurrent-ingest stability test — where does it live?
-
-**a)** **`internal/store/postgres/docs_test.go`** — extends the existing
-IMPL-0002 invariant test. Same `//go:build integration` tag; runs in CI's
-existing `integration` job.
-
-**b)** **`test/integration/postgres/`** — server-level integration suite.
-More end-to-end (drives the HTTP handler not the store directly), but
-slower and farther from the actual seam being tested.
-
-**c)** **Both.** Belt-and-suspenders.
-
-*My lean: (a)* — the invariant is about the keyset's correctness under
-concurrent writes; that's a store-layer property, not an HTTP-layer
-property. Testing it where the seam lives is more targeted.
-
-### OQ7: Should `listDocsByType` (path-scoped per-type list) also gain `?sort=`?
-
-DESIGN-0003 OQ8 resolved this as "no, YAGNI." Re-asking at the IMPL level
-because the cursor-envelope plumbing from Phase 1 makes adding it almost
-free — the same `Sort` parameter could flow through `listDocsByType`'s
-handler with maybe 10 extra lines.
-
-**a)** **Keep DESIGN-0003 OQ8's resolution — no sort on `listDocsByType`.**
-Defer until rfc-site has a concrete UI need.
-
-**b)** **Add it now while the plumbing is fresh.** Modest extra surface;
-costs ~30 LoC + a handful of test cases; opens the path for rfc-site to
-sort per-type directory views (e.g. `/rfc?sort=updated_desc`) without a
-second IMPL doc.
-
-*My lean: (a)* — DESIGN-0003 already pinned this; reopening a decision
-during implementation is a small but real coherence cost. Easy to ship
-in a 50-line follow-up PR if rfc-site asks for it.
-
-### OQ8: Memory store implementation — full parity or just enough for tests?
-
-The `internal/store/memory` fake powers unit + contract + (some)
-integration tests. Postgres is the production store. Phase 2 needs the
-memory store updated, but how completely?
-
-**a)** **Full parity.** Memory store implements every (sort × filter ×
-cursor) combination correctly. Higher upfront cost; ensures tests
-exercise the same surface as production.
-
-**b)** **Minimum viable.** Memory store handles `SortCreatedDesc` only
-(today's behavior) plus the type filter; other sorts return
-`ErrNotImplemented`. Postgres integration tests cover the rest. Cheaper
-in the short term but fragments the test matrix.
-
-*My lean: (a)* — the memory store is the only thing keeping contract
-tests Postgres-free in CI. Cutting corners on parity here forces every
-new contract assertion to drag a Postgres dependency, which slows the
-test loop. The memory store's sort+filter implementation is ~30 LoC of
-`sort.Slice` + filter loop — small enough to justify full parity.
+`internal/store/memory` implements every (sort × filter × cursor)
+combination correctly. Implementation: a slice copy, `sort.Slice`, the
+type filter as a `slices.ContainsFunc`, and the cursor as a linear scan
+to find the start row. ~50 LoC. Keeps contract + handler tests
+Postgres-free in CI.
 
 ## References
 
