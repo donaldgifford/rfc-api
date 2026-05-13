@@ -26,12 +26,26 @@ import (
 )
 
 // Docs holds the Docs-service handler methods.
+//
+// The registry lives here (not behind the service) because every
+// filter / sort gate in IMPL-0007 is a query-string concern: the
+// handler needs to translate `filter=type:rfc` into a 400 response
+// when "rfc" is not registered, *before* a call ever reaches the
+// service. Pushing this validation through the service would
+// silently turn parse errors into "no matches" results.
 type Docs struct {
 	svc *service.Docs
+	reg domain.DocumentTypeRegistry
 }
 
-// NewDocs constructs a Docs handler over the given service.
-func NewDocs(svc *service.Docs) *Docs { return &Docs{svc: svc} }
+// NewDocs constructs a Docs handler over the given service and
+// type registry. The registry is the source of truth for filter
+// value validation (DESIGN-0003 #Type-filter-validation); the
+// service uses its own registry copy for its own checks (e.g.
+// ListByType).
+func NewDocs(svc *service.Docs, reg domain.DocumentTypeRegistry) *Docs {
+	return &Docs{svc: svc, reg: reg}
+}
 
 // Get serves GET /api/v1/{type}/{id}. Reconstructs the canonical
 // display id from the route-segment type and the URL numeric id via
@@ -66,18 +80,32 @@ func (h *Docs) ListByType(w http.ResponseWriter, r *http.Request) {
 }
 
 // ListAll serves GET /api/v1/docs — the cross-type aggregation.
+// Phase 3 wires the ?filter= + ?sort= contract from DESIGN-0003: the
+// query parsers validate every input against the document-type
+// registry + Sort enum and emit problem+json on any malformation; the
+// response's X-Total-Count-Unfiltered header is set only when at
+// least one filter is active.
 func (h *Docs) ListAll(w http.ResponseWriter, r *http.Request) {
-	limit, cur, err := parseListQuery(r)
+	q, err := parseListAllQuery(r, h.reg)
 	if err != nil {
 		httperr.Write(w, r, err)
 		return
 	}
-	page, err := h.svc.ListAll(r.Context(), limit, cur)
+	page, err := h.svc.ListAll(r.Context(), q.Limit, q.Cursor, q.TypeIDs, q.Sort)
 	if err != nil {
 		httperr.Write(w, r, err)
 		return
 	}
-	writePage(w, r, page)
+	var unfilteredTotal *int
+	if q.HasFilter {
+		n, err := h.svc.CountAll(r.Context())
+		if err != nil {
+			httperr.Write(w, r, err)
+			return
+		}
+		unfilteredTotal = &n
+	}
+	writePageWithUnfiltered(w, r, page, unfilteredTotal)
 }
 
 // Links serves GET /api/v1/{type}/{id}/links.
@@ -163,9 +191,25 @@ func parseListQuery(r *http.Request) (int, *list.Cursor, error) {
 // writePage serializes a store.Page as a bare JSON array with Link +
 // X-Total-Count headers per the Resolved Decision envelope rule.
 func writePage(w http.ResponseWriter, r *http.Request, page store.Page) {
+	writePageWithUnfiltered(w, r, page, nil)
+}
+
+// writePageWithUnfiltered is writePage plus the
+// X-Total-Count-Unfiltered seam introduced by IMPL-0007. When
+// unfilteredTotal is non-nil, render.ArrayJSON sets that header so
+// clients can distinguish "filter matched zero rows" from "no
+// documents exist at all" without a follow-up request. nil keeps
+// today's behavior — the header is omitted entirely.
+func writePageWithUnfiltered(
+	w http.ResponseWriter,
+	r *http.Request,
+	page store.Page,
+	unfilteredTotal *int,
+) {
 	info := render.PageInfo{
-		Total:      page.Total,
-		NextCursor: cursor.Encode(page.NextCursor),
+		Total:           page.Total,
+		NextCursor:      cursor.Encode(page.NextCursor),
+		TotalUnfiltered: unfilteredTotal,
 	}
 	render.ArrayJSON(w, r, page.Items, info)
 }

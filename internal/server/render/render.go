@@ -24,10 +24,19 @@ const contentType = "application/json"
 // by ArrayJSON to set X-Total-Count and Link headers per DESIGN-0001
 // #API surface. NextCursor empty = last page; PrevCursor empty when
 // no previous page is known (e.g. first request).
+//
+// TotalUnfiltered is the IMPL-0007 #X-Total-Count-Unfiltered seam:
+// when non-nil, ArrayJSON sets the header to its value. Handler
+// passes nil for unfiltered requests so the header is omitted, and
+// a *int for filtered requests so the client can distinguish "no
+// matches" (filtered total=0) from "no documents at all"
+// (unfiltered total=0). Pointer (not zero int) so the omission is
+// explicit at the call site.
 type PageInfo struct {
-	Total      int
-	NextCursor string
-	PrevCursor string
+	Total           int
+	NextCursor      string
+	PrevCursor      string
+	TotalUnfiltered *int
 }
 
 // JSON writes a success response with status and v as the body.
@@ -56,6 +65,9 @@ func ArrayJSON(w http.ResponseWriter, r *http.Request, items any, info PageInfo)
 	h := w.Header()
 	h.Set("Content-Type", contentType)
 	h.Set("X-Total-Count", strconv.Itoa(info.Total))
+	if info.TotalUnfiltered != nil {
+		h.Set("X-Total-Count-Unfiltered", strconv.Itoa(*info.TotalUnfiltered))
+	}
 	if link := buildLinkHeader(r, info); link != "" {
 		h.Set("Link", link)
 	}

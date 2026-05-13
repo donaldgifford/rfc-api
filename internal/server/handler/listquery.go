@@ -3,8 +3,13 @@ package handler
 import (
 	"errors"
 	"fmt"
+	"net/http"
 	"regexp"
+	"strconv"
 
+	"github.com/donaldgifford/rfc-api/internal/domain"
+	"github.com/donaldgifford/rfc-api/internal/server/cursor"
+	"github.com/donaldgifford/rfc-api/internal/service"
 	"github.com/donaldgifford/rfc-api/internal/store/list"
 )
 
@@ -48,6 +53,13 @@ var errBadFilter = errors.New("bad filter")
 // handler-friendlier message; the underlying chain is preserved so
 // httperr.classify still maps it to 400.
 var errBadSort = errors.New("bad sort")
+
+// errCursorSortMismatch is the package-local sentinel for the
+// cross-check between an inbound ?cursor= and ?sort=: a cursor minted
+// under one sort cannot be honored under a different sort. Phase 3
+// wraps this with domain.ErrInvalidInput at the handler edge so the
+// client sees 400 + problem+json (DESIGN-0003 #Error-contract).
+var errCursorSortMismatch = errors.New("cursor sort mismatch")
 
 // parseFilters turns the raw r.URL.Query()["filter"] slice into a
 // validated []filter. Each value must take the form `field:value`
@@ -131,4 +143,82 @@ func parseSort(raw string) (list.Sort, error) {
 		return "", fmt.Errorf("%w: %w", errBadSort, err)
 	}
 	return s, nil
+}
+
+// listAllQuery captures the full parsed-and-validated query string for
+// GET /api/v1/docs (the cross-type list endpoint). Limit / cursor are
+// the historical pagination shape; typeIDs / sort are the IMPL-0007
+// additions. HasFilter tells the handler whether to emit
+// X-Total-Count-Unfiltered (DESIGN-0003 #Total-count-headers).
+type listAllQuery struct {
+	Limit     int
+	Cursor    *list.Cursor
+	TypeIDs   []string
+	Sort      list.Sort
+	HasFilter bool
+}
+
+// parseListAllQuery owns the full parse + validate sequence for the
+// cross-type list endpoint. Order matters: limit and cursor come
+// first so today's-shape callers still see today's error if their
+// known params are bad, then filter / sort layer on top.
+//
+// Filter values are validated against the registry — unknown type
+// ids return a 400 with the offending id named in the detail
+// message. The cursor-sort cross-check is the last gate so the more
+// specific "your cursor was minted under sort X" error wins over a
+// stale-but-otherwise-correct request.
+func parseListAllQuery(r *http.Request, reg domain.DocumentTypeRegistry) (listAllQuery, error) {
+	q := r.URL.Query()
+	out := listAllQuery{}
+
+	if v := q.Get("limit"); v != "" {
+		n, err := strconv.Atoi(v)
+		if err != nil || n < 1 || n > service.MaxListLimit {
+			return out, fmt.Errorf("%w: limit must be 1..%d", domain.ErrInvalidInput, service.MaxListLimit)
+		}
+		out.Limit = n
+	}
+
+	cur, err := cursor.Decode(q.Get("cursor"))
+	if err != nil {
+		return out, fmt.Errorf("%w: %w", domain.ErrInvalidInput, err)
+	}
+	out.Cursor = cur
+
+	filters, err := parseFilters(q["filter"])
+	if err != nil {
+		return out, fmt.Errorf("%w: %w", domain.ErrInvalidInput, err)
+	}
+	for _, f := range filters {
+		if f.Field != "type" {
+			return out, fmt.Errorf(
+				"%w: filter field %q not supported (phase 1: only 'type')",
+				domain.ErrInvalidInput, f.Field,
+			)
+		}
+		if _, ok := reg.Get(f.Value); !ok {
+			return out, fmt.Errorf("%w: unknown type %q", domain.ErrInvalidInput, f.Value)
+		}
+		out.TypeIDs = append(out.TypeIDs, f.Value)
+	}
+	out.HasFilter = len(filters) > 0
+
+	sort, err := parseSort(q.Get("sort"))
+	if err != nil {
+		return out, fmt.Errorf("%w: %w", domain.ErrInvalidInput, err)
+	}
+	out.Sort = sort
+
+	// Cursor-sort cross-check: a cursor minted under one sort cannot
+	// be honored under another. Skip when no cursor is present (an
+	// unsorted-cursor request is the most common shape).
+	if cur != nil && cur.Sort != "" && cur.Sort != sort {
+		return out, fmt.Errorf(
+			"%w: %w: cursor=%s, request=%s",
+			domain.ErrInvalidInput, errCursorSortMismatch, cur.Sort, sort,
+		)
+	}
+
+	return out, nil
 }

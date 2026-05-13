@@ -45,22 +45,41 @@ func (d *Docs) ListByType(ctx context.Context, typeID string, limit int, cursor 
 	if _, ok := d.registry.Get(typeID); !ok {
 		return store.Page{}, fmt.Errorf("%w: unknown type %q", domain.ErrInvalidInput, typeID)
 	}
-	return d.store.List(ctx,
+	return d.store.List(
+		ctx,
 		list.WithTypes(typeID),
 		list.WithLimit(normalizeLimit(limit)),
 		list.WithCursor(cursor),
 	)
 }
 
-// ListAll returns documents across all types, paginated. Phase 3
-// extends this with filter + sort once the handler-layer parsers
-// land — for now it preserves today's behavior (default sort,
-// unfiltered).
-func (d *Docs) ListAll(ctx context.Context, limit int, cursor *list.Cursor) (store.Page, error) {
-	return d.store.List(ctx,
+// ListAll returns documents across all types, paginated. typeIDs
+// filters the result set to the OR-union of the given types (the
+// caller is responsible for validating each id against the registry);
+// an empty / nil slice is unfiltered. sort selects the ordering; the
+// zero value is treated as list.DefaultSort.
+//
+// The handler is the single source of validation for typeIDs + sort
+// — by the time the request reaches the service, every value here
+// has already been gated through parseListAllQuery.
+func (d *Docs) ListAll(
+	ctx context.Context,
+	limit int,
+	cursor *list.Cursor,
+	typeIDs []string,
+	sort list.Sort,
+) (store.Page, error) {
+	opts := []list.Option{
 		list.WithLimit(normalizeLimit(limit)),
 		list.WithCursor(cursor),
-	)
+	}
+	if len(typeIDs) > 0 {
+		opts = append(opts, list.WithTypes(typeIDs...))
+	}
+	if sort != "" {
+		opts = append(opts, list.WithSort(sort))
+	}
+	return d.store.List(ctx, opts...)
 }
 
 // CountAll returns the unfiltered document count. Used by the

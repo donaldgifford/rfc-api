@@ -141,15 +141,15 @@ with filter+sort preserved in the `rel=next` / `rel=prev` URLs.
 
 #### Tasks
 
-- [ ] **Parse query in `internal/server/handler/docs.go`.** Read `r.URL.Query()` for `filter[]` (repeating) + `sort` + existing `limit` / `cursor`. Call the Phase 1 parsers; wrap all `ErrBad*` with `domain.ErrInvalidInput` at the handler edge.
-- [ ] **Validate filter values against the type registry.** For `filter=type:<id>`, look up the type id against `domain.Registry` (already threaded through the handler dep struct); reject unknown ids with `domain.ErrInvalidInput` + `detail: "unknown type: <id>"`.
-- [ ] **Cursor-sort cross-check.** If both `?cursor=` and `?sort=` are present and the cursor's sort doesn't match the request's sort, return 400 with `detail: "cursor sort mismatch: cursor=<a>, request=<b>"`. Sourced from Phase 1's `ErrCursorSortMismatch`.
-- [ ] **Call the store with the functional-option set.** `store.List(ctx, list.WithSort(s), list.WithTypes(t...), list.WithLimit(n), list.WithCursor(c))`. Existing dependency injection of `store.Docs` is reused; no new constructor wiring needed.
-- [ ] **`X-Total-Count` header.** Set to the filtered total (today's semantics — current behavior preserved when no filter is active).
-- [ ] **`X-Total-Count-Unfiltered` header.** Emit only when at least one `filter=` is active. Value comes from the Phase 2 `CountAll` helper. When no filter is active, header is omitted entirely (zero visible change for unfiltered callers).
-- [ ] **Link-header preservation.** Update the `rel=next` / `rel=prev` URL builder to include every active `filter=` value (repeated) + `sort=` (single). The next-page cursor is minted with the *same* sort the request used, so cursor + sort stay aligned across page traversal.
-- [ ] **Handler unit tests.** Add cases to the existing `internal/server/handler/docs_test.go` covering: filter-only happy path, sort-only happy path, filter+sort+cursor round-trip, every malformed-input → 400 case, `X-Total-Count-Unfiltered` present/absent based on filter, Link headers carry the params verbatim.
-- [ ] Run `make lint`, `make fmt`.
+- [x] **Parse query in `internal/server/handler/docs.go`.** New `parseListAllQuery` lives in `internal/server/handler/listquery.go` (alongside Phase 1's `parseFilters` / `parseSort`). Reads `r.URL.Query()` for `filter[]` (repeating) + `sort` + existing `limit` / `cursor`, calls the Phase 1 parsers, and wraps all `errBad*` and `errCursorSortMismatch` with `domain.ErrInvalidInput` at the edge.
+- [x] **Validate filter values against the type registry.** Phase 1 supports `field == "type"` only — any other field returns 400 (`"filter field X not supported (phase 1: only 'type')"`). For `type:<id>`, the registry's `Get` rejects unknown ids with 400 (`unknown type "X"`). Registry is threaded into `handler.Docs` via a new `reg domain.DocumentTypeRegistry` field on the struct + a wider `NewDocs(svc, reg)` constructor.
+- [x] **Cursor-sort cross-check.** When both `?cursor=` and `?sort=` are present, the cursor's `Sort` field is compared against the parsed sort; mismatch returns 400 with `detail: "cursor sort mismatch: cursor=<a>, request=<b>"`. New package-local `errCursorSortMismatch` sentinel.
+- [x] **Call the store with the functional-option set.** Service `ListAll` grew `(typeIDs []string, sort list.Sort)` arguments; the handler passes the parsed values through and service builds the `list.Option` slice (`WithTypes` / `WithSort` are appended conditionally so unfiltered + default-sort traffic continues to hit the same query path as today).
+- [x] **`X-Total-Count` header.** Unchanged — still the filtered total, set unconditionally by `render.ArrayJSON`.
+- [x] **`X-Total-Count-Unfiltered` header.** New `render.PageInfo.TotalUnfiltered *int` field. Handler populates it from `service.CountAll` only when `listAllQuery.HasFilter` is true, leaving it nil otherwise; `ArrayJSON` skips the header entirely when the pointer is nil. Zero visible change for unfiltered callers (tested by `TestDocsListAll_NoParams_NoUnfilteredHeader`).
+- [x] **Link-header preservation.** `render.formatLink` already clones `r.URL.Query()` and overwrites only the `cursor=` value, so `filter[]` + `sort=` ride through automatically. Cursor `Sort` field carries the active sort from page 1 → page 2, so the cross-check stays consistent across traversal. Pinned by `TestDocsListAll_FilterPlusSort_CursorRoundTrip`.
+- [x] **Handler unit tests.** Six new cases in `docs_test.go`: filter-only happy path, sort-only happy path, no-params regression guard (no unfiltered header), filter+sort+cursor full round-trip (real Link header + extracted next URL), four bad-input → 400 cases (unknown filter field, malformed filter, unknown type value, unknown sort), and cursor-sort mismatch. Helper functions `docIDs` / `extractRelNextURL` / `swapSort` keep the asserts readable.
+- [x] Run `make lint`, `make fmt`. Clean (0 issues).
 
 #### Success Criteria
 

@@ -28,7 +28,7 @@ func buildTestHandler(t *testing.T, types []config.DocumentType) http.Handler {
 		ID: "RFC-0001", Type: "rfc", Title: "First", Status: "Draft",
 	})
 	handlers := server.Handlers{
-		Docs:    handler.NewDocs(service.NewDocs(mem, reg)),
+		Docs:    handler.NewDocs(service.NewDocs(mem, reg), reg),
 		Search:  handler.NewSearch(service.NewSearch(search.NoopClient{}, reg)),
 		Types:   handler.NewTypes(reg),
 		Webhook: handler.NewWebhook(nil), // handler tolerates nil config

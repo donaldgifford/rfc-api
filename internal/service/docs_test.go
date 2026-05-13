@@ -77,7 +77,7 @@ func TestDocsListByType_Happy(t *testing.T) {
 
 func TestDocsListAll(t *testing.T) {
 	d := newFixture(t)
-	page, err := d.ListAll(t.Context(), 10, nil)
+	page, err := d.ListAll(t.Context(), 10, nil, nil, "")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -90,7 +90,7 @@ func TestDocsList_LimitClamp(t *testing.T) {
 	// Ask for 0 / negative / > 200; service should still succeed.
 	d := newFixture(t)
 	for _, lim := range []int{0, -5, 9999} {
-		if _, err := d.ListAll(t.Context(), lim, nil); err != nil {
+		if _, err := d.ListAll(t.Context(), lim, nil, nil, ""); err != nil {
 			t.Errorf("limit=%d: %v", lim, err)
 		}
 	}
