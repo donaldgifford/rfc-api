@@ -34,7 +34,8 @@ func runServe(ctx context.Context, logger *slog.Logger, args []string) error {
 	// Rebuild the logger now that we know the configured level and
 	// format; install as slog default so every package that uses
 	// slog.Default picks it up (middleware, readiness, httperr).
-	logger = buildLogger(cfg.Log,
+	logger = buildLogger(
+		cfg.Log,
 		slog.String("service", "rfc-api"),
 		slog.String("version", version),
 		slog.String("commit", commit),
@@ -82,7 +83,7 @@ func runServe(ctx context.Context, logger *slog.Logger, args []string) error {
 	logger.InfoContext(ctx, "meilisearch client configured", "url", meiliClient.URL())
 	searchSvc := service.NewSearch(meiliClient, reg)
 	handlers := server.Handlers{
-		Docs:   handler.NewDocs(docsSvc),
+		Docs:   handler.NewDocs(docsSvc, reg),
 		Search: handler.NewSearch(searchSvc),
 		Types:  handler.NewTypes(reg),
 		Webhook: handler.NewWebhook(&handler.WebhookConfig{

@@ -7,7 +7,7 @@ import (
 	"time"
 
 	"github.com/donaldgifford/rfc-api/internal/domain"
-	"github.com/donaldgifford/rfc-api/internal/store"
+	"github.com/donaldgifford/rfc-api/internal/store/list"
 	"github.com/donaldgifford/rfc-api/internal/store/memory"
 )
 
@@ -71,7 +71,7 @@ func TestList_CrossType(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	page, err := s.List(t.Context(), store.ListQuery{Limit: 10})
+	page, err := s.List(t.Context(), list.WithLimit(10))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -89,7 +89,7 @@ func TestList_ByType(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	page, err := s.List(t.Context(), store.ListQuery{TypeID: "rfc", Limit: 10})
+	page, err := s.List(t.Context(), list.WithTypes("rfc"), list.WithLimit(10))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -108,7 +108,7 @@ func TestList_PaginationCursor(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	first, err := s.List(t.Context(), store.ListQuery{Limit: 2})
+	first, err := s.List(t.Context(), list.WithLimit(2))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -119,7 +119,7 @@ func TestList_PaginationCursor(t *testing.T) {
 		t.Fatalf("first page len = %d, want 2", len(first.Items))
 	}
 
-	second, err := s.List(t.Context(), store.ListQuery{Limit: 2, Cursor: first.NextCursor})
+	second, err := s.List(t.Context(), list.WithLimit(2), list.WithCursor(first.NextCursor))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -140,9 +140,170 @@ func TestList_BadLimit(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	_, err = s.List(t.Context(), store.ListQuery{Limit: 0})
+	_, err = s.List(t.Context(), list.WithLimit(0))
 	if !errors.Is(err, domain.ErrInvalidInput) {
 		t.Errorf("want ErrInvalidInput, got %v", err)
+	}
+}
+
+// TestList_SortVariants verifies the memory store dispatches on every
+// list.Sort value documented in DESIGN-0003 #Sort-semantics and emits
+// the expected order. The seed has 3 docs with distinct created_at
+// times; updated_at is the same across all three so the id tiebreaker
+// drives the updated_* cases.
+func TestList_SortVariants(t *testing.T) {
+	s, err := memory.LoadDir(seedFS(), "seed")
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	cases := []struct {
+		name string
+		sort list.Sort
+		want []domain.DocumentID
+	}{
+		// created_desc: newest first = RFC-0002 → ADR-0001 → RFC-0001
+		{
+			"created_desc", list.SortCreatedDesc,
+			[]domain.DocumentID{"RFC-0002", "ADR-0001", "RFC-0001"},
+		},
+		// created_asc: oldest first
+		{
+			"created_asc", list.SortCreatedAsc,
+			[]domain.DocumentID{"RFC-0001", "ADR-0001", "RFC-0002"},
+		},
+		// id_asc: alphabetical
+		{
+			"id_asc", list.SortIDAsc,
+			[]domain.DocumentID{"ADR-0001", "RFC-0001", "RFC-0002"},
+		},
+		// id_desc: reverse alphabetical
+		{
+			"id_desc", list.SortIDDesc,
+			[]domain.DocumentID{"RFC-0002", "RFC-0001", "ADR-0001"},
+		},
+	}
+	for _, c := range cases {
+		t.Run(c.name, func(t *testing.T) {
+			page, err := s.List(t.Context(), list.WithSort(c.sort), list.WithLimit(10))
+			if err != nil {
+				t.Fatalf("List: %v", err)
+			}
+			if len(page.Items) != len(c.want) {
+				t.Fatalf("got %d items, want %d", len(page.Items), len(c.want))
+			}
+			for i, w := range c.want {
+				if page.Items[i].ID != w {
+					t.Errorf("position %d: got %q, want %q", i, page.Items[i].ID, w)
+				}
+			}
+		})
+	}
+}
+
+// TestList_FilterOR_AcrossMultipleTypes pins the OR-within-field
+// semantics from DESIGN-0003 #Filter-semantics. Asking for type:rfc
+// OR type:adr should return all three seed docs.
+func TestList_FilterOR_AcrossMultipleTypes(t *testing.T) {
+	s, err := memory.LoadDir(seedFS(), "seed")
+	if err != nil {
+		t.Fatal(err)
+	}
+	page, err := s.List(
+		t.Context(),
+		list.WithTypes("rfc", "adr"),
+		list.WithLimit(10),
+	)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if page.Total != 3 {
+		t.Errorf("Total = %d, want 3 (rfc:2 + adr:1)", page.Total)
+	}
+	for _, d := range page.Items {
+		if d.Type != "rfc" && d.Type != "adr" {
+			t.Errorf("unexpected type in OR filter result: %q", d.Type)
+		}
+	}
+}
+
+// TestList_CursorMatchesSort verifies that NextCursor is minted with
+// the request's active sort, so the handler-layer cross-check can
+// compare cursor.Sort vs request.Sort.
+func TestList_CursorMatchesSort(t *testing.T) {
+	s, err := memory.LoadDir(seedFS(), "seed")
+	if err != nil {
+		t.Fatal(err)
+	}
+	page, err := s.List(
+		t.Context(),
+		list.WithSort(list.SortIDAsc),
+		list.WithLimit(2),
+	)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if page.NextCursor == nil {
+		t.Fatal("want NextCursor for partial page")
+	}
+	if page.NextCursor.Sort != list.SortIDAsc {
+		t.Errorf("NextCursor.Sort = %q, want %q", page.NextCursor.Sort, list.SortIDAsc)
+	}
+}
+
+// TestList_PaginationUnderSort verifies cursor traversal works
+// correctly under a non-default sort (id_asc), exercising the
+// rowAfterCursor dispatch.
+func TestList_PaginationUnderSort(t *testing.T) {
+	s, err := memory.LoadDir(seedFS(), "seed")
+	if err != nil {
+		t.Fatal(err)
+	}
+	p1, err := s.List(
+		t.Context(),
+		list.WithSort(list.SortIDAsc),
+		list.WithLimit(1),
+	)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if p1.Items[0].ID != "ADR-0001" {
+		t.Fatalf("page1[0] = %q, want ADR-0001", p1.Items[0].ID)
+	}
+	p2, err := s.List(
+		t.Context(),
+		list.WithSort(list.SortIDAsc),
+		list.WithLimit(2),
+		list.WithCursor(p1.NextCursor),
+	)
+	if err != nil {
+		t.Fatal(err)
+	}
+	want := []domain.DocumentID{"RFC-0001", "RFC-0002"}
+	if len(p2.Items) != 2 {
+		t.Fatalf("page2 len = %d, want 2", len(p2.Items))
+	}
+	for i, w := range want {
+		if p2.Items[i].ID != w {
+			t.Errorf("page2[%d] = %q, want %q", i, p2.Items[i].ID, w)
+		}
+	}
+}
+
+// TestCountAll_UnfilteredTotal proves CountAll ignores any options —
+// the handler relies on this for X-Total-Count-Unfiltered when a
+// filter is active.
+func TestCountAll_UnfilteredTotal(t *testing.T) {
+	s, err := memory.LoadDir(seedFS(), "seed")
+	if err != nil {
+		t.Fatal(err)
+	}
+	got, err := s.CountAll(t.Context())
+	if err != nil {
+		t.Fatalf("CountAll: %v", err)
+	}
+	if got != 3 {
+		t.Errorf("CountAll = %d, want 3 (all seed docs regardless of filter)", got)
 	}
 }
 

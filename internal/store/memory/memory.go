@@ -16,11 +16,13 @@ import (
 	"fmt"
 	"io/fs"
 	"path/filepath"
+	"slices"
 	"sort"
 	"strings"
 
 	"github.com/donaldgifford/rfc-api/internal/domain"
 	"github.com/donaldgifford/rfc-api/internal/store"
+	"github.com/donaldgifford/rfc-api/internal/store/list"
 )
 
 // Store is an in-memory store.Docs.
@@ -115,44 +117,162 @@ func (s *Store) Get(_ context.Context, id domain.DocumentID) (domain.Document, e
 	return doc, nil
 }
 
-// List applies the query against the in-memory index.
-func (s *Store) List(_ context.Context, q store.ListQuery) (store.Page, error) {
-	if q.Limit <= 0 {
+// List applies the assembled options against the in-memory index.
+// Filtering, sorting, and cursor seek are all done in Go: copy the
+// document slice, apply the type filter, sort by the active list.Sort,
+// seek past the cursor, then slice to limit. ~50 lines because the
+// in-memory store must reach full parity with Postgres so unit and
+// contract tests can run Postgres-free (IMPL-0007 #OQ8).
+func (s *Store) List(_ context.Context, opts ...list.Option) (store.Page, error) {
+	cfg := list.Apply(opts...)
+	if cfg.Limit <= 0 {
 		return store.Page{}, fmt.Errorf("%w: limit must be positive", domain.ErrInvalidInput)
 	}
 
-	filtered := make([]domain.Document, 0, len(s.ordered))
-	for i := range s.ordered {
-		if q.TypeID != "" && s.ordered[i].Type != q.TypeID {
-			continue
-		}
-		filtered = append(filtered, s.ordered[i])
-	}
-	total := len(filtered)
+	rows := s.filter(cfg.TypeIDs)
+	total := len(rows)
 
-	// Seek past the cursor: the cursor carries the last row on the
-	// previous page; skip everything up to and including that row.
-	if q.Cursor != nil {
-		idx := sort.Search(len(filtered), func(i int) bool {
-			d := filtered[i]
-			if !d.CreatedAt.Equal(q.Cursor.CreatedAt) {
-				return d.CreatedAt.Before(q.Cursor.CreatedAt)
-			}
-			return d.ID > q.Cursor.ID
-		})
-		filtered = filtered[idx:]
-	}
+	sortRows(rows, cfg.Sort)
+	rows = seekPastCursor(rows, cfg.Sort, cfg.Cursor)
 
-	limit := q.Limit
 	page := store.Page{Total: total}
-	if len(filtered) > limit {
-		last := filtered[limit-1]
-		page.NextCursor = &store.Cursor{CreatedAt: last.CreatedAt, ID: last.ID}
-		page.Items = append(page.Items, filtered[:limit]...)
+	if len(rows) > cfg.Limit {
+		last := rows[cfg.Limit-1]
+		page.NextCursor = nextCursor(&last, cfg.Sort)
+		page.Items = append(page.Items, rows[:cfg.Limit]...)
 	} else {
-		page.Items = append(page.Items, filtered...)
+		page.Items = append(page.Items, rows...)
 	}
 	return page, nil
+}
+
+// CountAll returns the unfiltered document count — used by the
+// handler to populate X-Total-Count-Unfiltered when a filter is
+// active (DESIGN-0003 #Total-count-headers; IMPL-0007 #OQ5).
+func (s *Store) CountAll(_ context.Context) (int, error) {
+	return len(s.ordered), nil
+}
+
+// filter copies s.ordered and applies the type-id OR-filter. An
+// empty TypeIDs slice returns a full copy. The copy is mandatory:
+// sortRows mutates its argument and List runs concurrently with
+// itself in tests.
+func (s *Store) filter(typeIDs []string) []domain.Document {
+	out := make([]domain.Document, 0, len(s.ordered))
+	for i := range s.ordered {
+		if len(typeIDs) > 0 && !slices.Contains(typeIDs, s.ordered[i].Type) {
+			continue
+		}
+		out = append(out, s.ordered[i])
+	}
+	return out
+}
+
+// sortRows orders rows in place per the active sort. The comparator
+// always uses ID as a deterministic tiebreaker so equal sort-column
+// values produce a stable order across calls.
+func sortRows(rows []domain.Document, s list.Sort) {
+	sort.Slice(rows, func(i, j int) bool {
+		return less(&rows[i], &rows[j], s)
+	})
+}
+
+func less(a, b *domain.Document, s list.Sort) bool {
+	switch s {
+	case list.SortCreatedDesc:
+		if !a.CreatedAt.Equal(b.CreatedAt) {
+			return a.CreatedAt.After(b.CreatedAt)
+		}
+		return a.ID < b.ID
+	case list.SortCreatedAsc:
+		if !a.CreatedAt.Equal(b.CreatedAt) {
+			return a.CreatedAt.Before(b.CreatedAt)
+		}
+		return a.ID < b.ID
+	case list.SortUpdatedDesc:
+		if !a.UpdatedAt.Equal(b.UpdatedAt) {
+			return a.UpdatedAt.After(b.UpdatedAt)
+		}
+		return a.ID < b.ID
+	case list.SortUpdatedAsc:
+		if !a.UpdatedAt.Equal(b.UpdatedAt) {
+			return a.UpdatedAt.Before(b.UpdatedAt)
+		}
+		return a.ID < b.ID
+	case list.SortIDDesc:
+		return a.ID > b.ID
+	case list.SortIDAsc:
+		return a.ID < b.ID
+	}
+	// Defensive default: same as SortCreatedDesc — never reached
+	// because list.Apply normalizes the zero value to DefaultSort.
+	if !a.CreatedAt.Equal(b.CreatedAt) {
+		return a.CreatedAt.After(b.CreatedAt)
+	}
+	return a.ID < b.ID
+}
+
+// seekPastCursor returns the slice tail starting after the row the
+// cursor names. Sort-aware: time-based sorts compare on CreatedAt /
+// UpdatedAt with the SortValue field; id-based sorts use ID alone.
+func seekPastCursor(rows []domain.Document, s list.Sort, cur *list.Cursor) []domain.Document {
+	if cur == nil {
+		return rows
+	}
+	idx := sort.Search(len(rows), func(i int) bool {
+		return rowAfterCursor(&rows[i], s, cur)
+	})
+	return rows[idx:]
+}
+
+// rowAfterCursor reports whether row r sorts strictly after the
+// cursor under sort s. Used as the `f` predicate for sort.Search,
+// which returns the first index where this is true.
+func rowAfterCursor(r *domain.Document, s list.Sort, cur *list.Cursor) bool {
+	switch s {
+	case list.SortCreatedDesc:
+		if !r.CreatedAt.Equal(cur.SortValue) {
+			return r.CreatedAt.Before(cur.SortValue)
+		}
+		return r.ID > cur.ID
+	case list.SortCreatedAsc:
+		if !r.CreatedAt.Equal(cur.SortValue) {
+			return r.CreatedAt.After(cur.SortValue)
+		}
+		return r.ID > cur.ID
+	case list.SortUpdatedDesc:
+		if !r.UpdatedAt.Equal(cur.SortValue) {
+			return r.UpdatedAt.Before(cur.SortValue)
+		}
+		return r.ID > cur.ID
+	case list.SortUpdatedAsc:
+		if !r.UpdatedAt.Equal(cur.SortValue) {
+			return r.UpdatedAt.After(cur.SortValue)
+		}
+		return r.ID > cur.ID
+	case list.SortIDDesc:
+		return r.ID < cur.ID
+	case list.SortIDAsc:
+		return r.ID > cur.ID
+	}
+	if !r.CreatedAt.Equal(cur.SortValue) {
+		return r.CreatedAt.Before(cur.SortValue)
+	}
+	return r.ID > cur.ID
+}
+
+// nextCursor builds the cursor that names `last` under sort s.
+// Time-based sorts populate SortValue with the active column; id
+// sorts leave SortValue zero (encoder emits an empty string slot).
+func nextCursor(last *domain.Document, s list.Sort) *list.Cursor {
+	cur := &list.Cursor{Sort: s, ID: last.ID}
+	switch s {
+	case list.SortCreatedDesc, list.SortCreatedAsc:
+		cur.SortValue = last.CreatedAt
+	case list.SortUpdatedDesc, list.SortUpdatedAsc:
+		cur.SortValue = last.UpdatedAt
+	}
+	return cur
 }
 
 // Links returns both outgoing and incoming links for id. Phase 2 only

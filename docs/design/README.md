@@ -34,4 +34,5 @@ docz create design "Your Design Title"
 |----|-------|--------|------|--------|------|
 | DESIGN-0001 | rfc-api HTTP server: Go + net/http structure | Implemented | 2026-04-19 | Donald Gifford | [0001-rfc-api-http-server-go-net-http-structure.md](0001-rfc-api-http-server-go-net-http-structure.md) |
 | DESIGN-0002 | DocumentType: extensibility for multiple content types | Implemented | 2026-04-19 | Donald Gifford | [0002-documenttype-extensibility-for-multiple-content-types.md](0002-documenttype-extensibility-for-multiple-content-types.md) |
+| DESIGN-0003 | listDocs filter and sort query parameter contract | Draft | 2026-05-12 | Donald Gifford | [0003-listdocs-filter-and-sort-query-parameter-contract.md](0003-listdocs-filter-and-sort-query-parameter-contract.md) |
 <!-- END DOCZ AUTO-GENERATED -->

@@ -10,7 +10,6 @@ import (
 	"fmt"
 	"log/slog"
 	"net/http"
-	"net/url"
 	"reflect"
 	"strconv"
 	"strings"
@@ -24,10 +23,19 @@ const contentType = "application/json"
 // by ArrayJSON to set X-Total-Count and Link headers per DESIGN-0001
 // #API surface. NextCursor empty = last page; PrevCursor empty when
 // no previous page is known (e.g. first request).
+//
+// TotalUnfiltered is the IMPL-0007 #X-Total-Count-Unfiltered seam:
+// when non-nil, ArrayJSON sets the header to its value. Handler
+// passes nil for unfiltered requests so the header is omitted, and
+// a *int for filtered requests so the client can distinguish "no
+// matches" (filtered total=0) from "no documents at all"
+// (unfiltered total=0). Pointer (not zero int) so the omission is
+// explicit at the call site.
 type PageInfo struct {
-	Total      int
-	NextCursor string
-	PrevCursor string
+	Total           int
+	NextCursor      string
+	PrevCursor      string
+	TotalUnfiltered *int
 }
 
 // JSON writes a success response with status and v as the body.
@@ -56,6 +64,9 @@ func ArrayJSON(w http.ResponseWriter, r *http.Request, items any, info PageInfo)
 	h := w.Header()
 	h.Set("Content-Type", contentType)
 	h.Set("X-Total-Count", strconv.Itoa(info.Total))
+	if info.TotalUnfiltered != nil {
+		h.Set("X-Total-Count-Unfiltered", strconv.Itoa(*info.TotalUnfiltered))
+	}
 	if link := buildLinkHeader(r, info); link != "" {
 		h.Set("Link", link)
 	}
@@ -92,21 +103,37 @@ func buildLinkHeader(r *http.Request, info PageInfo) string {
 	return strings.Join(parts, ", ")
 }
 
+// formatLink builds one `<url>; rel="<rel>"` entry. Path resolution
+// prefers r.RequestURI over r.URL.Path so the Link survives any
+// http.StripPrefix the router applied (the API mounts the v1 mux
+// under `/api/v1/` via StripPrefix, which rewrites r.URL.Path but
+// leaves RequestURI untouched). Without this, the Link header
+// emitted for `/api/v1/docs?...` would point at `/docs?...` and
+// clients following it would 404 against the unstripped mux.
 func formatLink(r *http.Request, cursor, rel string) string {
-	u := *r.URL
-	q := u.Query()
+	base, ok := requestURIPath(r)
+	if !ok {
+		base = r.URL.Path
+	}
+	q := r.URL.Query()
 	q.Set("cursor", cursor)
-	u.RawQuery = q.Encode()
-	return fmt.Sprintf("<%s>; rel=%q", urlPath(&u), rel)
+	out := base
+	if encoded := q.Encode(); encoded != "" {
+		out = base + "?" + encoded
+	}
+	return fmt.Sprintf("<%s>; rel=%q", out, rel)
 }
 
-// urlPath returns path?query for a relative Link header value. We
-// intentionally omit scheme/host — the relative form matches what
-// the client sent and sidesteps reverse-proxy / ingress rewriting
-// (the upstream target host may not match what the client sees).
-func urlPath(u *url.URL) string {
-	if u.RawQuery == "" {
-		return u.Path
+// requestURIPath splits r.RequestURI into its path component. Falls
+// back to (empty, false) for malformed input so callers can defer
+// to r.URL.Path; RequestURI may be empty (e.g. when a handler is
+// invoked outside an HTTP server context).
+func requestURIPath(r *http.Request) (string, bool) {
+	if r.RequestURI == "" {
+		return "", false
 	}
-	return u.Path + "?" + u.RawQuery
+	if i := strings.IndexByte(r.RequestURI, '?'); i >= 0 {
+		return r.RequestURI[:i], true
+	}
+	return r.RequestURI, true
 }

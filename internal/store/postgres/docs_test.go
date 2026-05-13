@@ -15,6 +15,7 @@ import (
 
 	"github.com/donaldgifford/rfc-api/internal/domain"
 	"github.com/donaldgifford/rfc-api/internal/store"
+	"github.com/donaldgifford/rfc-api/internal/store/list"
 	"github.com/donaldgifford/rfc-api/internal/store/postgres"
 )
 
@@ -167,7 +168,7 @@ func TestDocs_List_RespectsTypeFilter(t *testing.T) {
 	insertDoc(t, pool, sampleDoc("RFC-0001", "rfc", base))
 	insertDoc(t, pool, sampleDoc("ADR-0001", "adr", base.Add(-time.Minute)))
 
-	page, err := docs.List(t.Context(), store.ListQuery{TypeID: "rfc", Limit: 10})
+	page, err := docs.List(t.Context(), list.WithTypes("rfc"), list.WithLimit(10))
 	if err != nil {
 		t.Fatalf("List: %v", err)
 	}
@@ -192,7 +193,7 @@ func TestDocs_List_KeysetPaginationStable(t *testing.T) {
 
 	// First page limit=2 should return RFC-0003, RFC-0002 plus a
 	// NextCursor pointing at RFC-0002.
-	p1, err := docs.List(t.Context(), store.ListQuery{TypeID: "rfc", Limit: 2})
+	p1, err := docs.List(t.Context(), list.WithTypes("rfc"), list.WithLimit(2))
 	if err != nil {
 		t.Fatalf("page 1: %v", err)
 	}
@@ -217,9 +218,12 @@ func TestDocs_List_KeysetPaginationStable(t *testing.T) {
 
 	// Second page using the cursor from page 1 should return
 	// RFC-0001 (and NOT RFC-0002, confirming we skipped past it).
-	p2, err := docs.List(t.Context(), store.ListQuery{
-		TypeID: "rfc", Limit: 2, Cursor: p1.NextCursor,
-	})
+	p2, err := docs.List(
+		t.Context(),
+		list.WithTypes("rfc"),
+		list.WithLimit(2),
+		list.WithCursor(p1.NextCursor),
+	)
 	if err != nil {
 		t.Fatalf("page 2: %v", err)
 	}
@@ -232,6 +236,210 @@ func TestDocs_List_KeysetPaginationStable(t *testing.T) {
 	if p2.NextCursor != nil {
 		t.Errorf("page 2 NextCursor = %#v, want nil (last page)", p2.NextCursor)
 	}
+}
+
+// TestDocs_List_SortVariants drives every documented list.Sort
+// through the live Postgres query path. Seeds three rows with
+// distinct created/updated timestamps so each sort produces a
+// different observable order. Pins IMPL-0007 Phase 2 success
+// criteria item 1: every (sort) combination produces a consistent
+// ordered set.
+func TestDocs_List_SortVariants(t *testing.T) {
+	pool := testPool(t)
+	docs := postgres.NewDocs(pool)
+
+	base := time.Now().UTC().Truncate(time.Microsecond)
+	// Seed: ids picked so id-sort != created-sort != updated-sort.
+	rows := []struct {
+		id        string
+		typeID    string
+		createdAt time.Time
+		updatedAt time.Time
+	}{
+		{"RFC-0001", "rfc", base.Add(-2 * time.Hour), base.Add(-30 * time.Minute)},
+		{"RFC-0002", "rfc", base.Add(-1 * time.Hour), base},
+		{"ADR-0001", "adr", base, base.Add(-1 * time.Hour)},
+	}
+	for _, r := range rows {
+		d := sampleDoc(r.id, r.typeID, r.createdAt)
+		d.UpdatedAt = r.updatedAt
+		insertDoc(t, pool, d)
+	}
+
+	cases := []struct {
+		name string
+		sort list.Sort
+		want []domain.DocumentID
+	}{
+		{
+			"created_desc", list.SortCreatedDesc,
+			[]domain.DocumentID{"ADR-0001", "RFC-0002", "RFC-0001"},
+		},
+		{
+			"created_asc", list.SortCreatedAsc,
+			[]domain.DocumentID{"RFC-0001", "RFC-0002", "ADR-0001"},
+		},
+		{
+			"updated_desc", list.SortUpdatedDesc,
+			[]domain.DocumentID{"RFC-0002", "RFC-0001", "ADR-0001"},
+		},
+		{
+			"updated_asc", list.SortUpdatedAsc,
+			[]domain.DocumentID{"ADR-0001", "RFC-0001", "RFC-0002"},
+		},
+		{
+			"id_asc", list.SortIDAsc,
+			[]domain.DocumentID{"ADR-0001", "RFC-0001", "RFC-0002"},
+		},
+		{
+			"id_desc", list.SortIDDesc,
+			[]domain.DocumentID{"RFC-0002", "RFC-0001", "ADR-0001"},
+		},
+	}
+	for _, c := range cases {
+		t.Run(c.name, func(t *testing.T) {
+			page, err := docs.List(
+				t.Context(),
+				list.WithSort(c.sort),
+				list.WithLimit(10),
+			)
+			if err != nil {
+				t.Fatalf("List(%s): %v", c.sort, err)
+			}
+			got := idsOfDocs(page.Items)
+			if len(got) != len(c.want) {
+				t.Fatalf("got %v, want %v", got, c.want)
+			}
+			for i := range c.want {
+				if got[i] != c.want[i] {
+					t.Errorf("position %d: got %q, want %q (full: %v)", i, got[i], c.want[i], got)
+				}
+			}
+		})
+	}
+}
+
+// TestDocs_List_FilterOR pins that multiple WithTypes values
+// OR-combine into a `type = ANY($1::text[])` predicate. Asking for
+// rfc + design returns both rfc and design rows; an rfc + adr combo
+// returns rfc + adr but excludes design.
+func TestDocs_List_FilterOR(t *testing.T) {
+	pool := testPool(t)
+	docs := postgres.NewDocs(pool)
+
+	base := time.Now().UTC().Truncate(time.Microsecond)
+	insertDoc(t, pool, sampleDoc("RFC-0001", "rfc", base))
+	insertDoc(t, pool, sampleDoc("ADR-0001", "adr", base.Add(-1*time.Minute)))
+	insertDoc(t, pool, sampleDoc("DESIGN-0001", "design", base.Add(-2*time.Minute)))
+
+	page, err := docs.List(
+		t.Context(),
+		list.WithTypes("rfc", "design"),
+		list.WithLimit(10),
+	)
+	if err != nil {
+		t.Fatalf("List: %v", err)
+	}
+	if page.Total != 2 {
+		t.Errorf("Total = %d, want 2 (rfc + design, not adr)", page.Total)
+	}
+	for _, d := range page.Items {
+		if d.Type != "rfc" && d.Type != "design" {
+			t.Errorf("unexpected type %q in OR filter (rfc, design) result", d.Type)
+		}
+	}
+}
+
+// TestDocs_List_CursorUnderUpdatedSort exercises the keyset
+// comparison against updated_at — different column than the
+// today's-default created_at path, so a regression in the SQL
+// dispatch would show up here.
+func TestDocs_List_CursorUnderUpdatedSort(t *testing.T) {
+	pool := testPool(t)
+	docs := postgres.NewDocs(pool)
+
+	base := time.Now().UTC().Truncate(time.Microsecond)
+	// Insert with distinct updated_at; created_at order is reversed
+	// to prove the cursor honors the sort dimension, not the row's
+	// other timestamps.
+	rows := []struct {
+		id        string
+		createdAt time.Time
+		updatedAt time.Time
+	}{
+		{"RFC-0001", base.Add(-3 * time.Hour), base.Add(-30 * time.Minute)},
+		{"RFC-0002", base.Add(-2 * time.Hour), base.Add(-20 * time.Minute)},
+		{"RFC-0003", base.Add(-1 * time.Hour), base.Add(-10 * time.Minute)},
+	}
+	for _, r := range rows {
+		d := sampleDoc(r.id, "rfc", r.createdAt)
+		d.UpdatedAt = r.updatedAt
+		insertDoc(t, pool, d)
+	}
+
+	p1, err := docs.List(
+		t.Context(),
+		list.WithSort(list.SortUpdatedDesc),
+		list.WithLimit(2),
+	)
+	if err != nil {
+		t.Fatalf("page 1: %v", err)
+	}
+	if len(p1.Items) != 2 {
+		t.Fatalf("page 1 len = %d, want 2", len(p1.Items))
+	}
+	// updated_desc: most recently updated first = RFC-0003, RFC-0002.
+	if p1.Items[0].ID != "RFC-0003" || p1.Items[1].ID != "RFC-0002" {
+		t.Fatalf("page 1 = %v, want [RFC-0003 RFC-0002]", idsOfDocs(p1.Items))
+	}
+	if p1.NextCursor == nil || p1.NextCursor.Sort != list.SortUpdatedDesc {
+		t.Fatalf("page 1 NextCursor = %+v, want sort=updated_desc", p1.NextCursor)
+	}
+
+	p2, err := docs.List(
+		t.Context(),
+		list.WithSort(list.SortUpdatedDesc),
+		list.WithLimit(2),
+		list.WithCursor(p1.NextCursor),
+	)
+	if err != nil {
+		t.Fatalf("page 2: %v", err)
+	}
+	if len(p2.Items) != 1 || p2.Items[0].ID != "RFC-0001" {
+		t.Errorf("page 2 = %v, want [RFC-0001]", idsOfDocs(p2.Items))
+	}
+}
+
+// TestDocs_CountAll_Unfiltered pins the helper's invariant: returns
+// the full document count irrespective of filter, sort, or cursor.
+// The handler uses this in Phase 3 to populate X-Total-Count-Unfiltered
+// when at least one filter is active.
+func TestDocs_CountAll_Unfiltered(t *testing.T) {
+	pool := testPool(t)
+	docs := postgres.NewDocs(pool)
+
+	base := time.Now().UTC().Truncate(time.Microsecond)
+	insertDoc(t, pool, sampleDoc("RFC-0001", "rfc", base))
+	insertDoc(t, pool, sampleDoc("ADR-0001", "adr", base.Add(-time.Minute)))
+	insertDoc(t, pool, sampleDoc("DESIGN-0001", "design", base.Add(-2*time.Minute)))
+
+	got, err := docs.CountAll(t.Context())
+	if err != nil {
+		t.Fatalf("CountAll: %v", err)
+	}
+	if got != 3 {
+		t.Errorf("CountAll = %d, want 3", got)
+	}
+}
+
+// idsOfDocs is a small projection helper used to make order-asserting
+// failures readable.
+func idsOfDocs(docs []domain.Document) []domain.DocumentID {
+	out := make([]domain.DocumentID, len(docs))
+	for i, d := range docs {
+		out[i] = d.ID
+	}
+	return out
 }
 
 func TestDocs_Links_IncomingAndOutgoing(t *testing.T) {

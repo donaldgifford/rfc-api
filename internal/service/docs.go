@@ -6,6 +6,7 @@ import (
 
 	"github.com/donaldgifford/rfc-api/internal/domain"
 	"github.com/donaldgifford/rfc-api/internal/store"
+	"github.com/donaldgifford/rfc-api/internal/store/list"
 )
 
 // MaxListLimit is the hard cap on list-endpoint page size per
@@ -40,18 +41,52 @@ func (d *Docs) Get(ctx context.Context, id domain.DocumentID) (domain.Document, 
 
 // ListByType returns documents of the given type, paginated.
 // Returns domain.ErrInvalidInput when typeID is not registered.
-func (d *Docs) ListByType(ctx context.Context, typeID string, limit int, cursor *store.Cursor) (store.Page, error) {
+func (d *Docs) ListByType(ctx context.Context, typeID string, limit int, cursor *list.Cursor) (store.Page, error) {
 	if _, ok := d.registry.Get(typeID); !ok {
 		return store.Page{}, fmt.Errorf("%w: unknown type %q", domain.ErrInvalidInput, typeID)
 	}
-	limit = normalizeLimit(limit)
-	return d.store.List(ctx, store.ListQuery{TypeID: typeID, Limit: limit, Cursor: cursor})
+	return d.store.List(
+		ctx,
+		list.WithTypes(typeID),
+		list.WithLimit(normalizeLimit(limit)),
+		list.WithCursor(cursor),
+	)
 }
 
-// ListAll returns documents across all types, paginated.
-func (d *Docs) ListAll(ctx context.Context, limit int, cursor *store.Cursor) (store.Page, error) {
-	limit = normalizeLimit(limit)
-	return d.store.List(ctx, store.ListQuery{Limit: limit, Cursor: cursor})
+// ListAll returns documents across all types, paginated. typeIDs
+// filters the result set to the OR-union of the given types (the
+// caller is responsible for validating each id against the registry);
+// an empty / nil slice is unfiltered. sort selects the ordering; the
+// zero value is treated as list.DefaultSort.
+//
+// The handler is the single source of validation for typeIDs + sort
+// — by the time the request reaches the service, every value here
+// has already been gated through parseListAllQuery.
+func (d *Docs) ListAll(
+	ctx context.Context,
+	limit int,
+	cursor *list.Cursor,
+	typeIDs []string,
+	sort list.Sort,
+) (store.Page, error) {
+	opts := []list.Option{
+		list.WithLimit(normalizeLimit(limit)),
+		list.WithCursor(cursor),
+	}
+	if len(typeIDs) > 0 {
+		opts = append(opts, list.WithTypes(typeIDs...))
+	}
+	if sort != "" {
+		opts = append(opts, list.WithSort(sort))
+	}
+	return d.store.List(ctx, opts...)
+}
+
+// CountAll returns the unfiltered document count. Used by the
+// handler to populate X-Total-Count-Unfiltered when a filter is
+// active (DESIGN-0003 #Total-count-headers).
+func (d *Docs) CountAll(ctx context.Context) (int, error) {
+	return d.store.CountAll(ctx)
 }
 
 // Links returns both outgoing and incoming references for id.

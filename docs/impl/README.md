@@ -38,4 +38,5 @@ docz create impl "Your Implementation Title"
 | IMPL-0004 | rfc-api parser plugin seam implementation | Completed | 2026-04-20 | Donald Gifford | [0004-rfc-api-parser-plugin-seam-implementation.md](0004-rfc-api-parser-plugin-seam-implementation.md) |
 | IMPL-0005 | rfc-api Meilisearch search implementation | Completed | 2026-04-20 | Donald Gifford | [0005-rfc-api-meilisearch-search-implementation.md](0005-rfc-api-meilisearch-search-implementation.md) |
 | IMPL-0006 | section_slug consumer-side slug contract implementation | In Progress | 2026-05-08 | Donald Gifford | [0006-sectionslug-consumer-side-slug-contract-implementation.md](0006-sectionslug-consumer-side-slug-contract-implementation.md) |
+| IMPL-0007 | listDocs filter and sort query parameter contract | Draft | 2026-05-13 | Donald Gifford | [0007-listdocs-filter-and-sort-query-parameter-contract.md](0007-listdocs-filter-and-sort-query-parameter-contract.md) |
 <!-- END DOCZ AUTO-GENERATED -->

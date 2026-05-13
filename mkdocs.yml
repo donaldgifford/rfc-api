@@ -12,6 +12,7 @@ nav:
         - Overview: design/README.md
         - 'DESIGN-0001: rfc-api HTTP server: Go + net/http structure': design/0001-rfc-api-http-server-go-net-http-structure.md
         - 'DESIGN-0002: DocumentType: extensibility for multiple content types': design/0002-documenttype-extensibility-for-multiple-content-types.md
+        - 'DESIGN-0003: listDocs filter and sort query parameter contract': design/0003-listdocs-filter-and-sort-query-parameter-contract.md
     - Implementation Plans:
         - Overview: impl/README.md
         - 'IMPL-0001: rfc-api HTTP server phase 1 implementation': impl/0001-rfc-api-http-server-phase-1-implementation.md
@@ -20,6 +21,7 @@ nav:
         - 'IMPL-0004: rfc-api parser plugin seam implementation': impl/0004-rfc-api-parser-plugin-seam-implementation.md
         - 'IMPL-0005: rfc-api Meilisearch search implementation': impl/0005-rfc-api-meilisearch-search-implementation.md
         - 'IMPL-0006: section_slug consumer-side slug contract implementation': impl/0006-sectionslug-consumer-side-slug-contract-implementation.md
+        - 'IMPL-0007: listDocs filter and sort query parameter contract': impl/0007-listdocs-filter-and-sort-query-parameter-contract.md
     - Investigations:
         - Overview: investigation/README.md
         - 'INV-0001: Oxide RFD system: architecture case study': investigation/0001-oxide-rfd-system-architecture-case-study.md
