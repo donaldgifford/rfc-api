@@ -12,6 +12,7 @@ nav:
         - Overview: design/README.md
         - 'DESIGN-0001: rfc-api HTTP server: Go + net/http structure': design/0001-rfc-api-http-server-go-net-http-structure.md
         - 'DESIGN-0002: DocumentType: extensibility for multiple content types': design/0002-documenttype-extensibility-for-multiple-content-types.md
+        - 'DESIGN-0003: listDocs filter and sort query parameter contract': design/0003-listdocs-filter-and-sort-query-parameter-contract.md
     - Implementation Plans:
         - Overview: impl/README.md
         - 'IMPL-0001: rfc-api HTTP server phase 1 implementation': impl/0001-rfc-api-http-server-phase-1-implementation.md
