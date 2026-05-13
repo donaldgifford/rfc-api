@@ -15,6 +15,7 @@ import (
 
 	"github.com/donaldgifford/rfc-api/internal/domain"
 	"github.com/donaldgifford/rfc-api/internal/store"
+	"github.com/donaldgifford/rfc-api/internal/store/list"
 	"github.com/donaldgifford/rfc-api/internal/store/postgres"
 )
 
@@ -167,7 +168,7 @@ func TestDocs_List_RespectsTypeFilter(t *testing.T) {
 	insertDoc(t, pool, sampleDoc("RFC-0001", "rfc", base))
 	insertDoc(t, pool, sampleDoc("ADR-0001", "adr", base.Add(-time.Minute)))
 
-	page, err := docs.List(t.Context(), store.ListQuery{TypeID: "rfc", Limit: 10})
+	page, err := docs.List(t.Context(), list.WithTypes("rfc"), list.WithLimit(10))
 	if err != nil {
 		t.Fatalf("List: %v", err)
 	}
@@ -192,7 +193,7 @@ func TestDocs_List_KeysetPaginationStable(t *testing.T) {
 
 	// First page limit=2 should return RFC-0003, RFC-0002 plus a
 	// NextCursor pointing at RFC-0002.
-	p1, err := docs.List(t.Context(), store.ListQuery{TypeID: "rfc", Limit: 2})
+	p1, err := docs.List(t.Context(), list.WithTypes("rfc"), list.WithLimit(2))
 	if err != nil {
 		t.Fatalf("page 1: %v", err)
 	}
@@ -217,9 +218,11 @@ func TestDocs_List_KeysetPaginationStable(t *testing.T) {
 
 	// Second page using the cursor from page 1 should return
 	// RFC-0001 (and NOT RFC-0002, confirming we skipped past it).
-	p2, err := docs.List(t.Context(), store.ListQuery{
-		TypeID: "rfc", Limit: 2, Cursor: p1.NextCursor,
-	})
+	p2, err := docs.List(t.Context(),
+		list.WithTypes("rfc"),
+		list.WithLimit(2),
+		list.WithCursor(p1.NextCursor),
+	)
 	if err != nil {
 		t.Fatalf("page 2: %v", err)
 	}

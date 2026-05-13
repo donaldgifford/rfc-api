@@ -22,6 +22,7 @@ import (
 	"github.com/donaldgifford/rfc-api/internal/server/routectx"
 	"github.com/donaldgifford/rfc-api/internal/service"
 	"github.com/donaldgifford/rfc-api/internal/store"
+	"github.com/donaldgifford/rfc-api/internal/store/list"
 )
 
 // Docs holds the Docs-service handler methods.
@@ -140,7 +141,7 @@ func (h *Docs) Revisions(w http.ResponseWriter, r *http.Request) {
 // parseListQuery reads and validates the two pagination query params
 // that every list endpoint accepts. Returns domain.ErrInvalidInput
 // for out-of-range limits or malformed cursors.
-func parseListQuery(r *http.Request) (int, *store.Cursor, error) {
+func parseListQuery(r *http.Request) (int, *list.Cursor, error) {
 	q := r.URL.Query()
 
 	limit := 0

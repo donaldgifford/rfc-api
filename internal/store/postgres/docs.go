@@ -11,6 +11,7 @@ import (
 
 	"github.com/donaldgifford/rfc-api/internal/domain"
 	"github.com/donaldgifford/rfc-api/internal/store"
+	"github.com/donaldgifford/rfc-api/internal/store/list"
 )
 
 // Docs is the pgx-backed implementation of store.Docs. Read methods
@@ -59,37 +60,65 @@ func (d *Docs) Get(ctx context.Context, id domain.DocumentID) (domain.Document, 
 	return doc, nil
 }
 
-// List implements store.Docs.List with keyset pagination on
-// (created_at DESC, id ASC). The type filter is a no-op when
-// q.TypeID is empty — the cross-type /api/v1/docs surface.
+// List implements store.Docs.List with keyset pagination. The active
+// sort is selected by list.Sort; the type filter is OR-within-field
+// (DESIGN-0003 #Filter-semantics). Empty TypeIDs is the cross-type
+// /api/v1/docs surface.
 //
 // List returns only the document-level columns. Callers that need
 // authors / links / discussion hit the dedicated sub-resource
 // endpoints (which run through those store methods).
-func (d *Docs) List(ctx context.Context, q store.ListQuery) (store.Page, error) {
-	if q.Limit <= 0 {
+func (d *Docs) List(ctx context.Context, opts ...list.Option) (store.Page, error) {
+	cfg := list.Apply(opts...)
+	if cfg.Limit <= 0 {
 		return store.Page{}, fmt.Errorf("%w: limit must be positive", domain.ErrInvalidInput)
 	}
 
-	total, err := d.countDocuments(ctx, q.TypeID)
+	total, err := d.countDocuments(ctx, cfg.TypeIDs)
 	if err != nil {
 		return store.Page{}, err
 	}
 
-	items, err := d.listDocuments(ctx, q)
+	items, err := d.listDocuments(ctx, cfg)
 	if err != nil {
 		return store.Page{}, err
 	}
 
 	page := store.Page{Total: total}
-	if len(items) > q.Limit {
-		last := items[q.Limit-1]
-		page.NextCursor = &store.Cursor{CreatedAt: last.CreatedAt, ID: last.ID}
-		page.Items = items[:q.Limit]
+	if len(items) > cfg.Limit {
+		last := items[cfg.Limit-1]
+		page.NextCursor = nextCursor(&last, cfg.Sort)
+		page.Items = items[:cfg.Limit]
 	} else {
 		page.Items = items
 	}
 	return page, nil
+}
+
+// CountAll returns the unfiltered document count. Used by the
+// handler to populate X-Total-Count-Unfiltered when a filter is
+// active (DESIGN-0003 #Total-count-headers; IMPL-0007 #OQ5).
+func (d *Docs) CountAll(ctx context.Context) (int, error) {
+	var total int
+	if err := d.pool.QueryRow(ctx,
+		`SELECT count(*) FROM documents`).Scan(&total); err != nil {
+		return 0, upstream("count all documents", err)
+	}
+	return total, nil
+}
+
+// nextCursor builds the NextCursor a paginated query returns to the
+// caller. Time-based sorts populate SortValue; id sorts leave it
+// zero (the cursor encoder emits an empty K[0] slot for those).
+func nextCursor(last *domain.Document, s list.Sort) *list.Cursor {
+	cur := &list.Cursor{Sort: s, ID: last.ID}
+	switch s {
+	case list.SortCreatedDesc, list.SortCreatedAsc:
+		cur.SortValue = last.CreatedAt
+	case list.SortUpdatedDesc, list.SortUpdatedAsc:
+		cur.SortValue = last.UpdatedAt
+	}
+	return cur
 }
 
 // CountByType returns the number of documents per type id. Used by
@@ -535,17 +564,17 @@ func (d *Docs) getDocument(ctx context.Context, id domain.DocumentID) (domain.Do
 	return doc, nil
 }
 
-// countDocuments returns the total matching a list query. typeID ""
-// means cross-type.
-func (d *Docs) countDocuments(ctx context.Context, typeID string) (int, error) {
+// countDocuments returns the total matching a list query. An empty
+// typeIDs slice means cross-type.
+func (d *Docs) countDocuments(ctx context.Context, typeIDs []string) (int, error) {
 	var total int
 	var err error
-	if typeID == "" {
+	if len(typeIDs) == 0 {
 		err = d.pool.QueryRow(ctx, `SELECT count(*) FROM documents`).Scan(&total)
 	} else {
 		err = d.pool.QueryRow(ctx,
-			`SELECT count(*) FROM documents WHERE type = $1`,
-			typeID).Scan(&total)
+			`SELECT count(*) FROM documents WHERE type = ANY($1::text[])`,
+			typeIDs).Scan(&total)
 	}
 	if err != nil {
 		return 0, upstream("count documents", err)
@@ -555,45 +584,21 @@ func (d *Docs) countDocuments(ctx context.Context, typeID string) (int, error) {
 
 // listDocuments runs the paginated SELECT. It over-reads by one row
 // so the caller can set NextCursor without a second query.
-func (d *Docs) listDocuments(ctx context.Context, q store.ListQuery) ([]domain.Document, error) {
+//
+// The query is picked from a switch on (sort, filter present). IMPL-
+// 0007 #OQ4 keeps the queries as literal SQL constants rather than a
+// templated builder — twelve strings is within tolerable repetition,
+// each is paste-into-psql-friendly when debugging, and the existing
+// IMPL-0002 style already inlines query strings.
+func (d *Docs) listDocuments(ctx context.Context, cfg list.Config) ([]domain.Document, error) {
 	// Fetch one extra row so we can decide whether a NextCursor is
 	// warranted without re-querying.
-	limit := q.Limit + 1
+	limit := cfg.Limit + 1
+	hasFilter := len(cfg.TypeIDs) > 0
+	hasCursor := cfg.Cursor != nil
 
-	var (
-		rows pgx.Rows
-		err  error
-	)
-	switch {
-	case q.TypeID == "" && q.Cursor == nil:
-		rows, err = d.pool.Query(ctx,
-			`SELECT `+documentColumns+` FROM documents
-			   ORDER BY created_at DESC, id ASC
-			   LIMIT $1`, limit)
-	case q.TypeID == "" && q.Cursor != nil:
-		rows, err = d.pool.Query(ctx,
-			`SELECT `+documentColumns+` FROM documents
-			  WHERE (created_at < $1)
-			     OR (created_at = $1 AND id > $2)
-			   ORDER BY created_at DESC, id ASC
-			   LIMIT $3`,
-			q.Cursor.CreatedAt, string(q.Cursor.ID), limit)
-	case q.TypeID != "" && q.Cursor == nil:
-		rows, err = d.pool.Query(ctx,
-			`SELECT `+documentColumns+` FROM documents
-			  WHERE type = $1
-			   ORDER BY created_at DESC, id ASC
-			   LIMIT $2`, q.TypeID, limit)
-	default: // typeID != "" && cursor != nil
-		rows, err = d.pool.Query(ctx,
-			`SELECT `+documentColumns+` FROM documents
-			  WHERE type = $1
-			    AND ((created_at < $2)
-			      OR (created_at = $2 AND id > $3))
-			   ORDER BY created_at DESC, id ASC
-			   LIMIT $4`,
-			q.TypeID, q.Cursor.CreatedAt, string(q.Cursor.ID), limit)
-	}
+	query, args := buildListQuery(cfg.Sort, hasFilter, hasCursor, cfg, limit)
+	rows, err := d.pool.Query(ctx, query, args...)
 	if err != nil {
 		return nil, upstream("query documents", err)
 	}
@@ -611,6 +616,239 @@ func (d *Docs) listDocuments(ctx context.Context, q store.ListQuery) ([]domain.D
 		return nil, upstream("iterate document rows", err)
 	}
 	return items, nil
+}
+
+// SQL constants for the (sort × filter-present × cursor-present)
+// matrix. Twelve queries: 6 sorts × 2 filter states. The cursor's
+// keyset comparison varies with sort, so each constant inlines the
+// full WHERE shape for clarity at the call site.
+//
+// Argument order conventions:
+//   - $1..$N type-filter array (when present)
+//   - $N+1..$N+M cursor keyset values (when present)
+//   - $last limit
+//
+// Time-based sorts encode the cursor's sort column value in $cur1
+// and the tiebreaker id in $cur2. Id-based sorts only use $cur1
+// for the id tiebreaker. buildListQuery wires the right arg list
+// for each (sort, filter, cursor) combination.
+const (
+	// SortCreatedDesc — today's default ordering.
+	qListCreatedDescNoFilterNoCursor = `SELECT ` + documentColumns + ` FROM documents
+		ORDER BY created_at DESC, id ASC LIMIT $1`
+	qListCreatedDescNoFilterCursor = `SELECT ` + documentColumns + ` FROM documents
+		WHERE (created_at < $1) OR (created_at = $1 AND id > $2)
+		ORDER BY created_at DESC, id ASC LIMIT $3`
+	qListCreatedDescFilterNoCursor = `SELECT ` + documentColumns + ` FROM documents
+		WHERE type = ANY($1::text[])
+		ORDER BY created_at DESC, id ASC LIMIT $2`
+	qListCreatedDescFilterCursor = `SELECT ` + documentColumns + ` FROM documents
+		WHERE type = ANY($1::text[])
+		  AND ((created_at < $2) OR (created_at = $2 AND id > $3))
+		ORDER BY created_at DESC, id ASC LIMIT $4`
+
+	qListCreatedAscNoFilterNoCursor = `SELECT ` + documentColumns + ` FROM documents
+		ORDER BY created_at ASC, id ASC LIMIT $1`
+	qListCreatedAscNoFilterCursor = `SELECT ` + documentColumns + ` FROM documents
+		WHERE (created_at > $1) OR (created_at = $1 AND id > $2)
+		ORDER BY created_at ASC, id ASC LIMIT $3`
+	qListCreatedAscFilterNoCursor = `SELECT ` + documentColumns + ` FROM documents
+		WHERE type = ANY($1::text[])
+		ORDER BY created_at ASC, id ASC LIMIT $2`
+	qListCreatedAscFilterCursor = `SELECT ` + documentColumns + ` FROM documents
+		WHERE type = ANY($1::text[])
+		  AND ((created_at > $2) OR (created_at = $2 AND id > $3))
+		ORDER BY created_at ASC, id ASC LIMIT $4`
+
+	qListUpdatedDescNoFilterNoCursor = `SELECT ` + documentColumns + ` FROM documents
+		ORDER BY updated_at DESC, id ASC LIMIT $1`
+	qListUpdatedDescNoFilterCursor = `SELECT ` + documentColumns + ` FROM documents
+		WHERE (updated_at < $1) OR (updated_at = $1 AND id > $2)
+		ORDER BY updated_at DESC, id ASC LIMIT $3`
+	qListUpdatedDescFilterNoCursor = `SELECT ` + documentColumns + ` FROM documents
+		WHERE type = ANY($1::text[])
+		ORDER BY updated_at DESC, id ASC LIMIT $2`
+	qListUpdatedDescFilterCursor = `SELECT ` + documentColumns + ` FROM documents
+		WHERE type = ANY($1::text[])
+		  AND ((updated_at < $2) OR (updated_at = $2 AND id > $3))
+		ORDER BY updated_at DESC, id ASC LIMIT $4`
+
+	qListUpdatedAscNoFilterNoCursor = `SELECT ` + documentColumns + ` FROM documents
+		ORDER BY updated_at ASC, id ASC LIMIT $1`
+	qListUpdatedAscNoFilterCursor = `SELECT ` + documentColumns + ` FROM documents
+		WHERE (updated_at > $1) OR (updated_at = $1 AND id > $2)
+		ORDER BY updated_at ASC, id ASC LIMIT $3`
+	qListUpdatedAscFilterNoCursor = `SELECT ` + documentColumns + ` FROM documents
+		WHERE type = ANY($1::text[])
+		ORDER BY updated_at ASC, id ASC LIMIT $2`
+	qListUpdatedAscFilterCursor = `SELECT ` + documentColumns + ` FROM documents
+		WHERE type = ANY($1::text[])
+		  AND ((updated_at > $2) OR (updated_at = $2 AND id > $3))
+		ORDER BY updated_at ASC, id ASC LIMIT $4`
+
+	qListIDDescNoFilterNoCursor = `SELECT ` + documentColumns + ` FROM documents
+		ORDER BY id DESC LIMIT $1`
+	qListIDDescNoFilterCursor = `SELECT ` + documentColumns + ` FROM documents
+		WHERE id < $1
+		ORDER BY id DESC LIMIT $2`
+	qListIDDescFilterNoCursor = `SELECT ` + documentColumns + ` FROM documents
+		WHERE type = ANY($1::text[])
+		ORDER BY id DESC LIMIT $2`
+	qListIDDescFilterCursor = `SELECT ` + documentColumns + ` FROM documents
+		WHERE type = ANY($1::text[]) AND id < $2
+		ORDER BY id DESC LIMIT $3`
+
+	qListIDAscNoFilterNoCursor = `SELECT ` + documentColumns + ` FROM documents
+		ORDER BY id ASC LIMIT $1`
+	qListIDAscNoFilterCursor = `SELECT ` + documentColumns + ` FROM documents
+		WHERE id > $1
+		ORDER BY id ASC LIMIT $2`
+	qListIDAscFilterNoCursor = `SELECT ` + documentColumns + ` FROM documents
+		WHERE type = ANY($1::text[])
+		ORDER BY id ASC LIMIT $2`
+	qListIDAscFilterCursor = `SELECT ` + documentColumns + ` FROM documents
+		WHERE type = ANY($1::text[]) AND id > $2
+		ORDER BY id ASC LIMIT $3`
+)
+
+// buildListQuery dispatches on the active sort to a per-sort helper
+// that picks one of four SQL constants based on the (filter, cursor)
+// state. Splitting the dispatch keeps each function under the
+// gocognit / gocyclo thresholds.
+func buildListQuery(s list.Sort, hasFilter, hasCursor bool, cfg list.Config, limit int) (string, []any) {
+	switch s {
+	case list.SortCreatedDesc:
+		return queryCreatedDesc(hasFilter, hasCursor, cfg, limit)
+	case list.SortCreatedAsc:
+		return queryCreatedAsc(hasFilter, hasCursor, cfg, limit)
+	case list.SortUpdatedDesc:
+		return queryUpdatedDesc(hasFilter, hasCursor, cfg, limit)
+	case list.SortUpdatedAsc:
+		return queryUpdatedAsc(hasFilter, hasCursor, cfg, limit)
+	case list.SortIDDesc:
+		return queryIDDesc(hasFilter, hasCursor, cfg, limit)
+	case list.SortIDAsc:
+		return queryIDAsc(hasFilter, hasCursor, cfg, limit)
+	}
+	// Defensive default — list.Apply normalizes the zero sort, but
+	// belt-and-suspenders for ordering stability if a future
+	// list.Sort enum value lands without a matching case here.
+	return qListCreatedDescNoFilterNoCursor, []any{limit}
+}
+
+// timeSortArgs builds the positional argument list for a time-based
+// sort (created_*, updated_*). The argument order is:
+//
+//	(filter && cursor): TypeIDs, SortValue, ID, limit
+//	(filter && !cursor): TypeIDs, limit
+//	(!filter && cursor): SortValue, ID, limit
+//	(!filter && !cursor): limit
+//
+// Returned as a `[]any` ready to hand to pgx.Query.
+func timeSortArgs(hasFilter, hasCursor bool, cfg list.Config, limit int) []any {
+	switch {
+	case !hasFilter && !hasCursor:
+		return []any{limit}
+	case !hasFilter && hasCursor:
+		return []any{cfg.Cursor.SortValue, string(cfg.Cursor.ID), limit}
+	case hasFilter && !hasCursor:
+		return []any{cfg.TypeIDs, limit}
+	default:
+		return []any{cfg.TypeIDs, cfg.Cursor.SortValue, string(cfg.Cursor.ID), limit}
+	}
+}
+
+// idSortArgs is timeSortArgs without the timestamp column. Id-based
+// sorts keyset on the id alone.
+func idSortArgs(hasFilter, hasCursor bool, cfg list.Config, limit int) []any {
+	switch {
+	case !hasFilter && !hasCursor:
+		return []any{limit}
+	case !hasFilter && hasCursor:
+		return []any{string(cfg.Cursor.ID), limit}
+	case hasFilter && !hasCursor:
+		return []any{cfg.TypeIDs, limit}
+	default:
+		return []any{cfg.TypeIDs, string(cfg.Cursor.ID), limit}
+	}
+}
+
+func queryCreatedDesc(hasFilter, hasCursor bool, cfg list.Config, limit int) (string, []any) {
+	switch {
+	case !hasFilter && !hasCursor:
+		return qListCreatedDescNoFilterNoCursor, timeSortArgs(hasFilter, hasCursor, cfg, limit)
+	case !hasFilter && hasCursor:
+		return qListCreatedDescNoFilterCursor, timeSortArgs(hasFilter, hasCursor, cfg, limit)
+	case hasFilter && !hasCursor:
+		return qListCreatedDescFilterNoCursor, timeSortArgs(hasFilter, hasCursor, cfg, limit)
+	default:
+		return qListCreatedDescFilterCursor, timeSortArgs(hasFilter, hasCursor, cfg, limit)
+	}
+}
+
+func queryCreatedAsc(hasFilter, hasCursor bool, cfg list.Config, limit int) (string, []any) {
+	switch {
+	case !hasFilter && !hasCursor:
+		return qListCreatedAscNoFilterNoCursor, timeSortArgs(hasFilter, hasCursor, cfg, limit)
+	case !hasFilter && hasCursor:
+		return qListCreatedAscNoFilterCursor, timeSortArgs(hasFilter, hasCursor, cfg, limit)
+	case hasFilter && !hasCursor:
+		return qListCreatedAscFilterNoCursor, timeSortArgs(hasFilter, hasCursor, cfg, limit)
+	default:
+		return qListCreatedAscFilterCursor, timeSortArgs(hasFilter, hasCursor, cfg, limit)
+	}
+}
+
+func queryUpdatedDesc(hasFilter, hasCursor bool, cfg list.Config, limit int) (string, []any) {
+	switch {
+	case !hasFilter && !hasCursor:
+		return qListUpdatedDescNoFilterNoCursor, timeSortArgs(hasFilter, hasCursor, cfg, limit)
+	case !hasFilter && hasCursor:
+		return qListUpdatedDescNoFilterCursor, timeSortArgs(hasFilter, hasCursor, cfg, limit)
+	case hasFilter && !hasCursor:
+		return qListUpdatedDescFilterNoCursor, timeSortArgs(hasFilter, hasCursor, cfg, limit)
+	default:
+		return qListUpdatedDescFilterCursor, timeSortArgs(hasFilter, hasCursor, cfg, limit)
+	}
+}
+
+func queryUpdatedAsc(hasFilter, hasCursor bool, cfg list.Config, limit int) (string, []any) {
+	switch {
+	case !hasFilter && !hasCursor:
+		return qListUpdatedAscNoFilterNoCursor, timeSortArgs(hasFilter, hasCursor, cfg, limit)
+	case !hasFilter && hasCursor:
+		return qListUpdatedAscNoFilterCursor, timeSortArgs(hasFilter, hasCursor, cfg, limit)
+	case hasFilter && !hasCursor:
+		return qListUpdatedAscFilterNoCursor, timeSortArgs(hasFilter, hasCursor, cfg, limit)
+	default:
+		return qListUpdatedAscFilterCursor, timeSortArgs(hasFilter, hasCursor, cfg, limit)
+	}
+}
+
+func queryIDDesc(hasFilter, hasCursor bool, cfg list.Config, limit int) (string, []any) {
+	switch {
+	case !hasFilter && !hasCursor:
+		return qListIDDescNoFilterNoCursor, idSortArgs(hasFilter, hasCursor, cfg, limit)
+	case !hasFilter && hasCursor:
+		return qListIDDescNoFilterCursor, idSortArgs(hasFilter, hasCursor, cfg, limit)
+	case hasFilter && !hasCursor:
+		return qListIDDescFilterNoCursor, idSortArgs(hasFilter, hasCursor, cfg, limit)
+	default:
+		return qListIDDescFilterCursor, idSortArgs(hasFilter, hasCursor, cfg, limit)
+	}
+}
+
+func queryIDAsc(hasFilter, hasCursor bool, cfg list.Config, limit int) (string, []any) {
+	switch {
+	case !hasFilter && !hasCursor:
+		return qListIDAscNoFilterNoCursor, idSortArgs(hasFilter, hasCursor, cfg, limit)
+	case !hasFilter && hasCursor:
+		return qListIDAscNoFilterCursor, idSortArgs(hasFilter, hasCursor, cfg, limit)
+	case hasFilter && !hasCursor:
+		return qListIDAscFilterNoCursor, idSortArgs(hasFilter, hasCursor, cfg, limit)
+	default:
+		return qListIDAscFilterCursor, idSortArgs(hasFilter, hasCursor, cfg, limit)
+	}
 }
 
 // discussionOrNil returns a *Discussion (without Participants) or nil

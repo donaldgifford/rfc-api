@@ -129,4 +129,4 @@ func TestDocsListByType_Cursor(t *testing.T) {
 	}
 }
 
-var _ = store.ListQuery{} // compile-time import retention
+var _ = store.Page{} // compile-time import retention

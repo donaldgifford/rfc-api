@@ -1,7 +1,7 @@
 // Package store defines the persistence seam between service code
-// and concrete backends (in-memory for Phase 2, Postgres for Phase
-// 3+). Service code depends on these interfaces; concrete stores
-// live in sub-packages and never import the service layer.
+// and concrete backends (in-memory for unit tests, Postgres for
+// production). Service code depends on these interfaces; concrete
+// stores live in sub-packages and never import the service layer.
 //
 // The interfaces return framework-agnostic domain types and the
 // sentinel domain errors (domain.ErrNotFound, etc.). HTTP translation
@@ -16,63 +16,38 @@ import (
 	"github.com/donaldgifford/rfc-api/internal/store/list"
 )
 
-// ListQuery names the parameters a list-shaped store call accepts.
-// TypeID empty means cross-type (used by /api/v1/docs); non-empty
-// narrows to one registered type.
-//
-// Cursor is opaque at this layer: the service encodes it to/from
-// the wire and hands the decoded tuple in on the Cursor field.
-type ListQuery struct {
-	TypeID string
-	Limit  int
-	Cursor *Cursor
-}
-
-// Cursor is the decoded pagination cursor. The cursor captures the
-// last row on the previous page so the store can continue from the
-// right position without offsets.
-//
-// Sort names the ordering the cursor was minted under. The handler
-// rejects cross-sort cursor reuse with 400 (DESIGN-0003 #Error-contract).
-// A zero Sort is treated as list.SortCreatedDesc for backward compat
-// with cursors minted before IMPL-0007.
-//
-// CreatedAt holds the sort-column value for time-based sorts
-// (created_*, updated_*). For id-based sorts it is the zero time and
-// the keyset comparison runs on ID alone. The historical field name
-// stays in Phase 1 to keep the diff small; Phase 2 may rename it to
-// SortValue if a clearer name reads better at the call sites.
-type Cursor struct {
-	Sort      list.Sort
-	CreatedAt time.Time
-	ID        domain.DocumentID
-}
-
 // Page is the list-endpoint return shape. Items is already sorted;
 // NextCursor is nil when the result exhausts the data set. Total is
-// the unfiltered count of matching documents (for X-Total-Count).
+// the filtered count of matching documents (used by X-Total-Count).
+// Callers that need the *unfiltered* total — for example, the
+// X-Total-Count-Unfiltered header when a filter is active per
+// DESIGN-0003 #Total-count-headers — use Docs.CountAll separately.
 type Page struct {
 	Items      []domain.Document
-	NextCursor *Cursor
+	NextCursor *list.Cursor
 	Total      int
 }
 
 // Docs is the set of document operations exposed by a store. Reads
-// are the entire v1 surface; Upsert is a stub in IMPL-0002 (real
-// write semantics arrive with IMPL-0003's worker). All methods honor
-// ctx for cancellation and tracing.
+// are the entire v1 surface. All methods honor ctx for cancellation
+// and tracing.
+//
+// List takes a variadic list.Option set (IMPL-0007 #OQ3). The empty
+// option set is equivalent to today's "all docs, default sort, default
+// limit, no cursor" query so callers can extend their option list
+// additively as new filter fields land without breaking call sites
+// already in the tree.
 type Docs interface {
 	Get(ctx context.Context, id domain.DocumentID) (domain.Document, error)
-	List(ctx context.Context, q ListQuery) (Page, error)
+	List(ctx context.Context, opts ...list.Option) (Page, error)
+	CountAll(ctx context.Context) (int, error)
 	Links(ctx context.Context, id domain.DocumentID) ([]domain.Link, error)
 	Discussion(ctx context.Context, id domain.DocumentID) (domain.Discussion, error)
 	Authors(ctx context.Context, id domain.DocumentID) ([]domain.Author, error)
 	Revisions(ctx context.Context, id domain.DocumentID) ([]Revision, error)
 
-	// Upsert inserts or replaces a document. Stubbed in IMPL-0002 —
-	// the in-memory store and the Postgres store both return a
-	// not-implemented error. IMPL-0003 wires the real path; the
-	// doc pointer avoids a 264-byte pass-by-value on hot loops.
+	// Upsert inserts or replaces a document. The doc pointer avoids a
+	// 264-byte pass-by-value on hot loops.
 	Upsert(ctx context.Context, doc *domain.Document) error
 }
 

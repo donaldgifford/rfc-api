@@ -27,7 +27,6 @@ import (
 	"time"
 
 	"github.com/donaldgifford/rfc-api/internal/domain"
-	"github.com/donaldgifford/rfc-api/internal/store"
 	"github.com/donaldgifford/rfc-api/internal/store/list"
 )
 
@@ -56,13 +55,13 @@ type wireLegacy struct {
 	I string `json:"i"`
 }
 
-// Encode turns a store.Cursor into its base64url JSON form. A nil
+// Encode turns a list.Cursor into its base64url JSON form. A nil
 // cursor encodes to the empty string (signaling "no more pages").
 //
 // Encode always emits the v1 envelope. A cursor with a zero Sort
 // is treated as list.SortCreatedDesc, matching the legacy-decode
 // fallback semantics.
-func Encode(c *store.Cursor) string {
+func Encode(c *list.Cursor) string {
 	if c == nil {
 		return ""
 	}
@@ -72,7 +71,7 @@ func Encode(c *store.Cursor) string {
 	}
 	var sortValue string
 	if isTimeSort(sort) {
-		sortValue = c.CreatedAt.UTC().Format(time.RFC3339Nano)
+		sortValue = c.SortValue.UTC().Format(time.RFC3339Nano)
 	}
 	b, err := json.Marshal(wireV1{
 		V: 1,
@@ -90,9 +89,9 @@ func Encode(c *store.Cursor) string {
 // nil) so handlers can feed r.URL.Query().Get("cursor") in directly.
 //
 // Decode accepts both the v1 envelope and the legacy {t,i} shape.
-// Legacy cursors return store.Cursor{Sort: list.SortCreatedDesc, …}
+// Legacy cursors return list.Cursor{Sort: list.SortCreatedDesc, …}
 // so the rest of the pipeline can treat the two uniformly.
-func Decode(s string) (*store.Cursor, error) {
+func Decode(s string) (*list.Cursor, error) {
 	if s == "" {
 		return nil, nil //nolint:nilnil // empty cursor is a valid "no cursor" input
 	}
@@ -117,7 +116,7 @@ func Decode(s string) (*store.Cursor, error) {
 	return decodeLegacy(raw)
 }
 
-func decodeV1(raw []byte) (*store.Cursor, error) {
+func decodeV1(raw []byte) (*list.Cursor, error) {
 	var w wireV1
 	if err := json.Unmarshal(raw, &w); err != nil {
 		return nil, fmt.Errorf("%w: json: %w", ErrInvalid, err)
@@ -129,7 +128,7 @@ func decodeV1(raw []byte) (*store.Cursor, error) {
 	if id == "" {
 		return nil, fmt.Errorf("%w: missing id", ErrInvalid)
 	}
-	cur := &store.Cursor{Sort: w.S, ID: domain.DocumentID(id)}
+	cur := &list.Cursor{Sort: w.S, ID: domain.DocumentID(id)}
 	if isTimeSort(w.S) {
 		if w.K[0] == "" {
 			return nil, fmt.Errorf("%w: missing sort value for %s", ErrInvalid, w.S)
@@ -138,12 +137,12 @@ func decodeV1(raw []byte) (*store.Cursor, error) {
 		if err != nil {
 			return nil, fmt.Errorf("%w: time: %w", ErrInvalid, err)
 		}
-		cur.CreatedAt = t
+		cur.SortValue = t
 	}
 	return cur, nil
 }
 
-func decodeLegacy(raw []byte) (*store.Cursor, error) {
+func decodeLegacy(raw []byte) (*list.Cursor, error) {
 	var w wireLegacy
 	if err := json.Unmarshal(raw, &w); err != nil {
 		return nil, fmt.Errorf("%w: json: %w", ErrInvalid, err)
@@ -155,9 +154,9 @@ func decodeLegacy(raw []byte) (*store.Cursor, error) {
 	if err != nil {
 		return nil, fmt.Errorf("%w: time: %w", ErrInvalid, err)
 	}
-	return &store.Cursor{
+	return &list.Cursor{
 		Sort:      list.SortCreatedDesc,
-		CreatedAt: t,
+		SortValue: t,
 		ID:        domain.DocumentID(w.I),
 	}, nil
 }

@@ -9,15 +9,14 @@ import (
 
 	"github.com/donaldgifford/rfc-api/internal/domain"
 	"github.com/donaldgifford/rfc-api/internal/server/cursor"
-	"github.com/donaldgifford/rfc-api/internal/store"
 	"github.com/donaldgifford/rfc-api/internal/store/list"
 )
 
 func TestRoundTrip(t *testing.T) {
 	t.Parallel()
-	want := &store.Cursor{
+	want := &list.Cursor{
 		Sort:      list.SortCreatedDesc,
-		CreatedAt: time.Date(2026, 4, 19, 15, 0, 0, 0, time.UTC),
+		SortValue: time.Date(2026, 4, 19, 15, 0, 0, 0, time.UTC),
 		ID:        "RFC-0001",
 	}
 	s := cursor.Encode(want)
@@ -28,7 +27,7 @@ func TestRoundTrip(t *testing.T) {
 	if err != nil {
 		t.Fatalf("decode: %v", err)
 	}
-	if got.Sort != want.Sort || !got.CreatedAt.Equal(want.CreatedAt) || got.ID != want.ID {
+	if got.Sort != want.Sort || !got.SortValue.Equal(want.SortValue) || got.ID != want.ID {
 		t.Errorf("round-trip: got %+v, want %+v", got, want)
 	}
 }
@@ -49,7 +48,7 @@ func TestRoundTrip_EverySort(t *testing.T) {
 	for _, s := range cases {
 		t.Run(string(s), func(t *testing.T) {
 			t.Parallel()
-			in := &store.Cursor{Sort: s, CreatedAt: ts, ID: domain.DocumentID(id)}
+			in := &list.Cursor{Sort: s, SortValue: ts, ID: domain.DocumentID(id)}
 			enc := cursor.Encode(in)
 			if enc == "" {
 				t.Fatalf("Encode returned empty for sort %s", s)
@@ -66,11 +65,11 @@ func TestRoundTrip_EverySort(t *testing.T) {
 			}
 			// Time-based sorts carry their timestamp; id-based sorts
 			// have a zero CreatedAt and the store dispatches on ID alone.
-			if isTimeSort(s) && !out.CreatedAt.Equal(ts) {
-				t.Errorf("Decode(%s).CreatedAt = %v, want %v", s, out.CreatedAt, ts)
+			if isTimeSort(s) && !out.SortValue.Equal(ts) {
+				t.Errorf("Decode(%s).SortValue = %v, want %v", s, out.SortValue, ts)
 			}
-			if !isTimeSort(s) && !out.CreatedAt.IsZero() {
-				t.Errorf("Decode(%s).CreatedAt = %v, want zero (id sort)", s, out.CreatedAt)
+			if !isTimeSort(s) && !out.SortValue.IsZero() {
+				t.Errorf("Decode(%s).SortValue = %v, want zero (id sort)", s, out.SortValue)
 			}
 		})
 	}
@@ -101,8 +100,8 @@ func TestDecode_LegacyEnvelope_AssumesCreatedDesc(t *testing.T) {
 	if got.Sort != list.SortCreatedDesc {
 		t.Errorf("legacy.Sort = %q, want %q", got.Sort, list.SortCreatedDesc)
 	}
-	if !got.CreatedAt.Equal(ts) {
-		t.Errorf("legacy.CreatedAt = %v, want %v", got.CreatedAt, ts)
+	if !got.SortValue.Equal(ts) {
+		t.Errorf("legacy.SortValue = %v, want %v", got.SortValue, ts)
 	}
 	if got.ID != domain.DocumentID(id) {
 		t.Errorf("legacy.ID = %q, want %q", got.ID, id)
@@ -110,12 +109,12 @@ func TestDecode_LegacyEnvelope_AssumesCreatedDesc(t *testing.T) {
 }
 
 // TestEncode_ZeroSortDefaultsToCreatedDesc covers the migration path:
-// callers (like today's in-memory store) that build a *store.Cursor
+// callers (like today's in-memory store) that build a *list.Cursor
 // without setting Sort still produce a valid, decodeable cursor.
 func TestEncode_ZeroSortDefaultsToCreatedDesc(t *testing.T) {
 	t.Parallel()
 	ts := time.Date(2026, 4, 19, 15, 0, 0, 0, time.UTC)
-	zeroSort := &store.Cursor{CreatedAt: ts, ID: "RFC-0001"} // Sort intentionally zero
+	zeroSort := &list.Cursor{SortValue: ts, ID: "RFC-0001"} // Sort intentionally zero
 
 	enc := cursor.Encode(zeroSort)
 	got, err := cursor.Decode(enc)

@@ -6,6 +6,7 @@ import (
 
 	"github.com/donaldgifford/rfc-api/internal/domain"
 	"github.com/donaldgifford/rfc-api/internal/store"
+	"github.com/donaldgifford/rfc-api/internal/store/list"
 )
 
 // MaxListLimit is the hard cap on list-endpoint page size per
@@ -40,18 +41,33 @@ func (d *Docs) Get(ctx context.Context, id domain.DocumentID) (domain.Document, 
 
 // ListByType returns documents of the given type, paginated.
 // Returns domain.ErrInvalidInput when typeID is not registered.
-func (d *Docs) ListByType(ctx context.Context, typeID string, limit int, cursor *store.Cursor) (store.Page, error) {
+func (d *Docs) ListByType(ctx context.Context, typeID string, limit int, cursor *list.Cursor) (store.Page, error) {
 	if _, ok := d.registry.Get(typeID); !ok {
 		return store.Page{}, fmt.Errorf("%w: unknown type %q", domain.ErrInvalidInput, typeID)
 	}
-	limit = normalizeLimit(limit)
-	return d.store.List(ctx, store.ListQuery{TypeID: typeID, Limit: limit, Cursor: cursor})
+	return d.store.List(ctx,
+		list.WithTypes(typeID),
+		list.WithLimit(normalizeLimit(limit)),
+		list.WithCursor(cursor),
+	)
 }
 
-// ListAll returns documents across all types, paginated.
-func (d *Docs) ListAll(ctx context.Context, limit int, cursor *store.Cursor) (store.Page, error) {
-	limit = normalizeLimit(limit)
-	return d.store.List(ctx, store.ListQuery{Limit: limit, Cursor: cursor})
+// ListAll returns documents across all types, paginated. Phase 3
+// extends this with filter + sort once the handler-layer parsers
+// land — for now it preserves today's behavior (default sort,
+// unfiltered).
+func (d *Docs) ListAll(ctx context.Context, limit int, cursor *list.Cursor) (store.Page, error) {
+	return d.store.List(ctx,
+		list.WithLimit(normalizeLimit(limit)),
+		list.WithCursor(cursor),
+	)
+}
+
+// CountAll returns the unfiltered document count. Used by the
+// handler to populate X-Total-Count-Unfiltered when a filter is
+// active (DESIGN-0003 #Total-count-headers).
+func (d *Docs) CountAll(ctx context.Context) (int, error) {
+	return d.store.CountAll(ctx)
 }
 
 // Links returns both outgoing and incoming references for id.
