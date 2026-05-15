@@ -12,10 +12,14 @@ For the higher-level setup + requirements overview, see
 mise install              # pin Go / golangci-lint / goimports / goreleaser...
 cp .env.example .env      # local config; gitignored, edit freely
 make compose-up           # starts postgres + meilisearch
-go run ./cmd/rfc-api serve
+make serve                # builds + runs `rfc-api serve` against compose deps
+                          # (use `make work` in a second shell for the sync worker)
 ```
 
-After `go run`:
+`make serve` reads `.env` and connects to the compose Postgres + Meilisearch.
+For an unbuilt-binary equivalent, `go run ./cmd/rfc-api serve` works too.
+
+After `make serve`:
 
 - Main HTTP listens on `http://localhost:8080` (user traffic, `/api/v1/*`).
 - Admin HTTP listens on `http://127.0.0.1:8081` (`/healthz`, `/readyz`,
