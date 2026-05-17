@@ -19,6 +19,50 @@
 #   * RFC_API_*  config that rfc-api itself defines
 #   * DATABASE_URL / MEILI_* / OTEL_*  upstream-standard names, unchanged
 
+# -- document_types: which doc types exist in this deployment ------
+#
+# Per DESIGN-0002 "type is a parameter, not a package name" — every
+# document type rfc-api knows about lives here, not in code. The
+# defaults baked into the binary register only `rfc` + `adr`; any
+# other type referenced by `worker.source_repos` below must be
+# added here too or the worker startup-check will refuse to boot
+# (`type_id "X" not in registry`).
+#
+# Prefix is the canonical-id prefix ("RFC-0001"). Lifecycle is the
+# allowed `status:` values for documents of this type — parser
+# validation rejects anything else.
+
+document_types:
+  # Lifecycle values mirror the upstream `.docz.yaml` `statuses:` list
+  # for each type — keep these in sync if you ever extend the docz
+  # template. Parser validation rejects any frontmatter `status:` not
+  # in this list.
+
+  - id: rfc
+    name: Request for Comments
+    prefix: RFC
+    lifecycle: [Draft, Proposed, Accepted, Rejected, Superseded]
+
+  - id: adr
+    name: Architecture Decision Record
+    prefix: ADR
+    lifecycle: [Proposed, Accepted, Deprecated, Superseded]
+
+  - id: design
+    name: Design Doc
+    prefix: DESIGN
+    lifecycle: [Draft, "In Review", Approved, Implemented, Abandoned]
+
+  - id: impl
+    name: Implementation Plan
+    prefix: IMPL
+    lifecycle: [Draft, "In Progress", Completed, Paused, Cancelled]
+
+  - id: investigation
+    name: Investigation
+    prefix: INV
+    lifecycle: [Open, "In Progress", Concluded, Inconclusive, Abandoned]
+
 # -- worker: which GitHub repos to scan, and how --------------------
 
 worker:
