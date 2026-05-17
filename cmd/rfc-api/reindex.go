@@ -31,11 +31,12 @@ func runReindex(ctx context.Context, _ *slog.Logger, args []string) error {
 	flags := flag.NewFlagSet("reindex", flag.ContinueOnError)
 	dryRun := flags.Bool("dry-run", false, "print document ids and exit without enqueuing")
 	checkDrift := flags.Bool("check-drift", false, "compare Postgres vs Meili per-type and exit without enqueuing")
+	configPath := flags.String("c", "", "path to config.yaml (overrides $RFC_API_CONFIG and the default "+config.DefaultFilePath+")")
 	if err := flags.Parse(args); err != nil {
 		return fmt.Errorf("parse reindex flags: %w", err)
 	}
 
-	cfg, err := config.Load(flags.Args(), config.DefaultFilePath)
+	cfg, err := config.Load(flags.Args(), config.ResolveFilePath(*configPath))
 	if err != nil {
 		return fmt.Errorf("load config: %w", err)
 	}

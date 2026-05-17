@@ -166,6 +166,25 @@ type SourceRepo struct {
 	Branch string `yaml:"branch"`
 }
 
+// ResolveFilePath returns the config file path callers should hand to
+// Load. Precedence (highest wins): explicit CLI flag value > the
+// RFC_API_CONFIG environment variable > the conventional default at
+// DefaultFilePath. Lives here (not in cmd/rfc-api) because os.Getenv
+// is restricted to this package — see lint_test.go.
+//
+// Missing files at the resolved path are not an error (loadFile
+// tolerates ErrNotExist), so a fresh local checkout that never sets
+// any of the three knobs falls back to defaults + env vars cleanly.
+func ResolveFilePath(flagVal string) string {
+	if flagVal != "" {
+		return flagVal
+	}
+	if env := os.Getenv("RFC_API_CONFIG"); env != "" {
+		return env
+	}
+	return DefaultFilePath
+}
+
 // Load returns a populated Config, applying the precedence
 // defaults < file < env < flags. args should be os.Args[1:] minus the
 // subcommand (e.g. os.Args[2:]).

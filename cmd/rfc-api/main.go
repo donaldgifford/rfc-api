@@ -19,11 +19,14 @@ package main
 import (
 	"context"
 	"errors"
+	"flag"
 	"fmt"
 	"log/slog"
 	"os"
 	"os/signal"
 	"syscall"
+
+	"github.com/donaldgifford/rfc-api/internal/config"
 )
 
 // Populated at build time via -ldflags (see Makefile).
@@ -95,6 +98,26 @@ func run(args []string) int {
 	}
 
 	return exitCodeFor(err, logger)
+}
+
+// loadCmdConfig is the shared flag-parse + config-load boilerplate for
+// subcommands whose only flag is `-c` (config file path). Subcommands
+// with additional flags (e.g. reindex's --dry-run) build their own
+// FlagSet rather than calling this.
+//
+// `name` is used as the FlagSet name and in the error wrappers so
+// failure messages name the offending subcommand.
+func loadCmdConfig(name string, args []string) (*config.Config, error) {
+	flags := flag.NewFlagSet(name, flag.ContinueOnError)
+	configPath := flags.String("c", "", "path to config.yaml (overrides $RFC_API_CONFIG and the default "+config.DefaultFilePath+")")
+	if err := flags.Parse(args); err != nil {
+		return nil, fmt.Errorf("parse %s flags: %w", name, err)
+	}
+	cfg, err := config.Load(flags.Args(), config.ResolveFilePath(*configPath))
+	if err != nil {
+		return nil, fmt.Errorf("load config: %w", err)
+	}
+	return cfg, nil
 }
 
 // exitCodeFor maps a subcommand's returned error to a process exit code.

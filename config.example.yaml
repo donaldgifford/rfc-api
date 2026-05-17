@@ -1,0 +1,177 @@
+# Example rfc-api config file.
+#
+# Copy to `config.yaml` on first run, then point `rfc-api` at it via:
+#   * `make serve` / `make work` — set `RFC_API_CONFIG=./config.yaml` in
+#     your `.env` (the make targets `set -a; . .env` before invoking
+#     the binary so the env var flows through).
+#   * Ad-hoc: `go run ./cmd/rfc-api serve -c ./config.yaml`.
+#
+# Precedence (highest wins): `-c` CLI flag > $RFC_API_CONFIG env var >
+# the default at `/etc/rfc-api/config.yaml`. A missing file at the
+# resolved path is silently tolerated, so dropping this file (or
+# leaving every key commented out) lets defaults + env vars take over.
+#
+# Everything in this file is *also* settable via env (single scalars)
+# except `worker.source_repos` — slices of structs can't be expressed
+# as env vars, so the list of repos to pull docs from lives here only.
+#
+# Naming rule (per DESIGN-0001 #Configuration):
+#   * RFC_API_*  config that rfc-api itself defines
+#   * DATABASE_URL / MEILI_* / OTEL_*  upstream-standard names, unchanged
+
+# -- document_types: which doc types exist in this deployment ------
+#
+# Per DESIGN-0002 "type is a parameter, not a package name" — every
+# document type rfc-api knows about lives here, not in code. The
+# defaults baked into the binary register only `rfc` + `adr`; any
+# other type referenced by `worker.source_repos` below must be
+# added here too or the worker startup-check will refuse to boot
+# (`type_id "X" not in registry`).
+#
+# Prefix is the canonical-id prefix ("RFC-0001"). Lifecycle is the
+# allowed `status:` values for documents of this type — parser
+# validation rejects anything else.
+
+document_types:
+  # Lifecycle values mirror the upstream `.docz.yaml` `statuses:` list
+  # for each type — keep these in sync if you ever extend the docz
+  # template. Parser validation rejects any frontmatter `status:` not
+  # in this list.
+
+  - id: rfc
+    name: Request for Comments
+    prefix: RFC
+    lifecycle: [Draft, Proposed, Accepted, Rejected, Superseded]
+
+  - id: adr
+    name: Architecture Decision Record
+    prefix: ADR
+    lifecycle: [Proposed, Accepted, Deprecated, Superseded]
+
+  - id: design
+    name: Design Doc
+    prefix: DESIGN
+    lifecycle: [Draft, "In Review", Approved, Implemented, Abandoned]
+
+  - id: impl
+    name: Implementation Plan
+    prefix: IMPL
+    lifecycle: [Draft, "In Progress", Completed, Paused, Cancelled]
+
+  - id: investigation
+    name: Investigation
+    prefix: INV
+    lifecycle: [Open, "In Progress", Concluded, Inconclusive, Abandoned]
+
+# -- worker: which GitHub repos to scan, and how --------------------
+
+worker:
+  # Polling cadence for the diff scanner. Push webhooks bypass this
+  # — the scanner is the safety net that catches missed deliveries.
+  scanner_interval: 5m
+
+  # Per-kind concurrency cap for the in-process leaser. Job kinds
+  # (`ingest`, `discussion_fetch`, `reindex`, `search_delete`) each
+  # get this many in-flight slots.
+  max_concurrent: 4
+
+  # -- Auth (pick exactly one mode) --
+  #
+  # The worker startup-checks `hasApp == hasPAT` and refuses to boot
+  # if both are set or both are empty (see githubsource/client.go).
+  # Empty values here fall through to the matching env vars.
+
+  # === Mode A: Personal Access Token (dev shortcut) ===
+  #
+  # Simplest for solo dev. Create a PAT at
+  #   https://github.com/settings/tokens
+  # with `repo` scope (public_repo if only hitting public repos).
+  # Leave the YAML key empty and set GITHUB_TOKEN in `.env`.
+  github_token: ""
+
+  # === Mode B: GitHub App (matches prod) ===
+  #
+  # In prod these come from a k8s Secret mounted as env vars
+  # (RFC_API_WORKER_GITHUB_APP_ID / _INSTALLATION_ID / _PRIVATE_KEY).
+  # For local dev you can either set those env vars in `.env` or
+  # inline the YAML values below.
+  #
+  # See `docs/development/local-dev.md` #github-app for the minimum
+  # permissions / event subscriptions to set on the App itself.
+  #
+  # Required repo permissions (all read-only):
+  #   - Contents          (list directories, fetch .md bodies, ListCommits)
+  #   - Metadata          (mandatory baseline; can't be disabled)
+  #   - Pull requests     (PR comments, files, ListPullRequestsWithCommit)
+  #
+  # github_app_id: "123456"
+  # github_app_installation_id: "12345678"
+  # github_app_private_key: |
+  #   -----BEGIN RSA PRIVATE KEY-----
+  #   <paste the contents of the .pem file GitHub gave you>
+  #   -----END RSA PRIVATE KEY-----
+
+  # The list of source repos. Each entry binds a (repo, path) pair to
+  # one document type. `type_id` MUST match a registered DocumentType
+  # (see DESIGN-0002 — the registry is the source of truth for what
+  # types exist). `parser` keys into the parser registry; the docz-
+  # markdown parser handles every type docz emits (RFC, ADR, DESIGN,
+  # IMPL, PLAN, INV).
+  #
+  # Example: self-feeding this repo's own docs/ tree for local dev.
+  source_repos:
+    - type_id: rfc
+      repo: donaldgifford/rfc-api
+      path: docs/rfc
+      parser: docz-markdown
+      branch: main
+    - type_id: adr
+      repo: donaldgifford/rfc-api
+      path: docs/adr
+      parser: docz-markdown
+      branch: main
+    - type_id: design
+      repo: donaldgifford/rfc-api
+      path: docs/design
+      parser: docz-markdown
+      branch: main
+    - type_id: impl
+      repo: donaldgifford/rfc-api
+      path: docs/impl
+      parser: docz-markdown
+      branch: main
+    - type_id: investigation
+      repo: donaldgifford/rfc-api
+      path: docs/investigation
+      parser: docz-markdown
+      branch: main
+
+# Every other knob below is settable via env var with the matching
+# RFC_API_* name (see .env.example for the canonical list). Listed
+# here only for the YAML-curious; uncomment any block you want
+# checked into the config file rather than the env.
+#
+# server:
+#   listen: ":8080"
+#   admin_listen: "127.0.0.1:8081"
+#   read_timeout: 15s
+#   write_timeout: 30s
+#   cors_origins: []
+#
+# log:
+#   level: info       # debug | info | warn | error
+#   format: json      # json | text
+#
+# database:
+#   url: "postgres://rfcapi:rfcapi@localhost:5432/rfcapi?sslmode=disable"
+#
+# meili:
+#   url: "http://localhost:7700"
+#   master_key: "dev-master-key"
+#
+# otel:
+#   otlp_endpoint: "http://localhost:4317"
+#   trace_sample_ratio: 0.1
+#
+# webhook:
+#   secret: "dev-webhook-secret"

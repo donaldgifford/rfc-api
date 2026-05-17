@@ -27,6 +27,10 @@ go.work.sum
 # env file
 .env
 
+# local rfc-api config (real source-repo list / auth knobs).
+# Commit changes to config.example.yaml instead.
+/config.yaml
+
 # docker compose local overrides (per-developer, not shared)
 compose.override.yaml
 compose.override.yml

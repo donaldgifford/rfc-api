@@ -35,11 +35,12 @@ installed by `mise install` — you do not need to install Go by hand.
 ## One-command setup
 
 ```sh
-mise install              # pin Go / golangci-lint / goimports / ...
-cp .env.example .env      # local config; gitignored, edit freely
-make compose-up           # starts Postgres + Meilisearch
-make serve                # builds + runs `rfc-api serve` against compose deps
-                          # (`make work` for the sync worker)
+mise install                          # pin Go / golangci-lint / goimports / ...
+cp .env.example .env                  # local env; gitignored, edit freely
+cp config.example.yaml config.yaml    # local YAML config; gitignored
+make dev-up                           # compose-up + wait-for-postgres + migrate
+make serve                            # builds + runs `rfc-api serve` against compose deps
+                                      # (`make work` for the sync worker)
 ```
 
 Then hit `http://localhost:8080/api/v1/types` to confirm the server

@@ -88,7 +88,9 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## Local development
 
-See [`docs/development/`](./docs/development/) for the setup + requirements overview, or jump straight to [`docs/development/local-dev.md`](./docs/development/local-dev.md) for the runbook (port map, compose profiles, pprof workflow, troubleshooting). TL;DR: `mise install && cp .env.example .env && make compose-up && make serve` (the matching worker is `make work`).
+See [`docs/development/`](./docs/development/) for the setup + requirements overview, or jump straight to [`docs/development/local-dev.md`](./docs/development/local-dev.md) for the runbook (port map, compose profiles, pprof workflow, troubleshooting). TL;DR: `mise install && cp .env.example .env && cp config.example.yaml config.yaml && make dev-up && make serve` (`dev-up` chains `compose-up` + wait-for-postgres + `migrate`; the matching worker is `make work`).
+
+**Config file resolution.** The YAML config path follows the precedence `-c <path>` flag > `RFC_API_CONFIG` env > `/etc/rfc-api/config.yaml` (the prod default). `config.ResolveFilePath(flagVal)` in `internal/config/` owns the resolution since `os.Getenv` is restricted to that package. `worker.source_repos` only lives in YAML — slices of structs can't be expressed as env vars, so this is the one knob that *requires* a config file. Everything else has env-var equivalents. The shared `loadCmdConfig(name, args)` helper in `cmd/rfc-api/main.go` is the standard flag-parse + load boilerplate for subcommands whose only flag is `-c`; subcommands with extra flags (e.g. `reindex` with `--dry-run` / `--check-drift`) build their own FlagSet.
 
 Dev deps run in `docker compose` via profile-tagged services (`postgres`, `meilisearch` default; `keycloak`, `otel-collector`, `jaeger`, `prometheus`, `grafana`, `loki`, `alloy` opt-in). The `rfc-api` binary itself is **never** run inside compose — always host-run via `go run` or `make run-local`. `docker build` is reserved for goreleaser / CI / release.
 

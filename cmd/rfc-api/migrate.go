@@ -3,14 +3,12 @@ package main
 import (
 	"context"
 	"errors"
-	"flag"
 	"fmt"
 	"log/slog"
 
 	"github.com/golang-migrate/migrate/v4"
 
 	"github.com/donaldgifford/rfc-api/db"
-	"github.com/donaldgifford/rfc-api/internal/config"
 )
 
 // runMigrate applies all pending SQL migrations against the database
@@ -23,14 +21,9 @@ import (
 // Exit semantics mirror the rest of the CLI: a nil return leaves main
 // at exitOK; any error propagates through exitCodeFor to exit 1.
 func runMigrate(ctx context.Context, logger *slog.Logger, args []string) error {
-	flags := flag.NewFlagSet("migrate", flag.ContinueOnError)
-	if err := flags.Parse(args); err != nil {
-		return fmt.Errorf("parse flags: %w", err)
-	}
-
-	cfg, err := config.Load(flags.Args(), config.DefaultFilePath)
+	cfg, err := loadCmdConfig("migrate", args)
 	if err != nil {
-		return fmt.Errorf("load config: %w", err)
+		return err
 	}
 
 	m, err := db.NewMigrator(cfg.Database.URL)
