@@ -61,6 +61,96 @@ curl -s http://localhost:8081/healthz  # -> {"status":"ok"}
 curl -s http://localhost:8081/readyz   # 200 once Postgres probe passes
 ```
 
+## GitHub App
+
+The worker needs read-only access to the repos in `worker.source_repos`.
+Two auth modes; pick **exactly one** (the startup check refuses both
+or neither):
+
+### Mode A: Personal Access Token (dev shortcut)
+
+Easiest for solo dev. Create a PAT at
+[github.com/settings/tokens](https://github.com/settings/tokens) with
+`repo` scope (or `public_repo` if you're only ingesting public repos),
+then drop into `.env`:
+
+```sh
+GITHUB_TOKEN=ghp_xxx
+```
+
+Leave `worker.github_token` empty in `config.yaml`. Skip the App
+section below.
+
+### Mode B: GitHub App (prod parity)
+
+Use this if you want to test the prod auth path end-to-end. App
+creation lives at
+[github.com/settings/apps/new](https://github.com/settings/apps/new).
+
+**Basic info**
+
+- Name: `rfc-api-<env>` (App names are GitHub-global so suffix avoids collisions)
+- Homepage URL: anything (the repo URL is fine)
+- **Webhook → Active: uncheck** for now. You can flip this on later
+  when an ingress is wired up; the worker doesn't care if events
+  never arrive — the scanner is the safety net.
+- Webhook URL / Secret: leave blank for now. Prod values will be
+  `https://<api-host>/api/v1/webhooks/github` + the
+  `RFC_API_WEBHOOK_SECRET` HMAC.
+- SSL verification: Enabled (default).
+
+**Repository permissions** (all read-only, nothing else):
+
+| Permission | Level | Used for |
+|---|---|---|
+| Contents | Read-only | `Repositories.GetContents` (list dirs + fetch `.md` bodies); `Repositories.ListCommits` (per-file author date for the three-tier timestamp fallback) |
+| Metadata | Read-only | Mandatory baseline GitHub auto-adds for any repo permission |
+| Pull requests | Read-only | `PullRequests.ListPullRequestsWithCommit` / `ListComments` / `ListFiles`, plus `Issues.ListComments` (PR threads are issue threads underneath) |
+
+Every other permission stays at "No access". No write anywhere; no
+org-level or account-level scopes.
+
+**Event subscriptions** (pre-tick these now so you don't have to come
+back when you turn the webhook on later):
+
+- Push
+- Pull request
+- Pull request review
+- Pull request review comment
+
+These map 1:1 to the `case` arms in `internal/server/handler/webhook.go`.
+
+**Where can this App be installed?**
+
+- "Only on this account" for dev
+- "Any account" for prod multi-tenant
+
+**After creating — install + grab the IDs**
+
+1. Click **Install App** in the left sidebar.
+2. Install on the account / org that owns the repos in
+   `worker.source_repos`.
+3. Pick "Only select repositories" → just the repos you want
+   ingested (e.g. `rfc-api`).
+4. Note the **Installation ID** — it's in the URL after install:
+   `github.com/settings/installations/<INSTALLATION_ID>`.
+5. Back on the App settings page, click **Generate a private key**
+   to download a `.pem` file.
+6. **App ID** is at the top of the App settings page.
+
+Drop the three values into either `config.yaml` (inline) or `.env`
+(via env vars — the prod shape, since k8s injects them as Secret
+values):
+
+```sh
+# in .env (recommended — mirrors prod's k8s Secret mount)
+RFC_API_WORKER_GITHUB_APP_ID=123456
+RFC_API_WORKER_GITHUB_APP_INSTALLATION_ID=12345678
+RFC_API_WORKER_GITHUB_APP_PRIVATE_KEY="$(cat ~/Downloads/rfc-api-dev.private-key.pem)"
+```
+
+Leave `worker.github_token` empty.
+
 ## Meilisearch key provisioning
 
 In dev, `MEILI_MASTER_KEY=dev-master-key` is enough — the API and

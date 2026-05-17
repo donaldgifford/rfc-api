@@ -31,19 +31,40 @@ worker:
   # get this many in-flight slots.
   max_concurrent: 4
 
-  # Auth: pick one mode.
+  # -- Auth (pick exactly one mode) --
   #
-  # Dev / single-tenant: set GITHUB_TOKEN in `.env`. Empty here lets
-  # the env var take over.
+  # The worker startup-checks `hasApp == hasPAT` and refuses to boot
+  # if both are set or both are empty (see githubsource/client.go).
+  # Empty values here fall through to the matching env vars.
+
+  # === Mode A: Personal Access Token (dev shortcut) ===
+  #
+  # Simplest for solo dev. Create a PAT at
+  #   https://github.com/settings/tokens
+  # with `repo` scope (public_repo if only hitting public repos).
+  # Leave the YAML key empty and set GITHUB_TOKEN in `.env`.
   github_token: ""
 
-  # Prod / multi-tenant: GitHub App credentials. Leave the token
-  # above empty if these are set.
+  # === Mode B: GitHub App (matches prod) ===
+  #
+  # In prod these come from a k8s Secret mounted as env vars
+  # (RFC_API_WORKER_GITHUB_APP_ID / _INSTALLATION_ID / _PRIVATE_KEY).
+  # For local dev you can either set those env vars in `.env` or
+  # inline the YAML values below.
+  #
+  # See `docs/development/local-dev.md` #github-app for the minimum
+  # permissions / event subscriptions to set on the App itself.
+  #
+  # Required repo permissions (all read-only):
+  #   - Contents          (list directories, fetch .md bodies, ListCommits)
+  #   - Metadata          (mandatory baseline; can't be disabled)
+  #   - Pull requests     (PR comments, files, ListPullRequestsWithCommit)
+  #
   # github_app_id: "123456"
   # github_app_installation_id: "12345678"
   # github_app_private_key: |
   #   -----BEGIN RSA PRIVATE KEY-----
-  #   ...
+  #   <paste the contents of the .pem file GitHub gave you>
   #   -----END RSA PRIVATE KEY-----
 
   # The list of source repos. Each entry binds a (repo, path) pair to
