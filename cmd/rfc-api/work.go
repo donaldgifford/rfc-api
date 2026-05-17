@@ -3,11 +3,9 @@ package main
 import (
 	"context"
 	"errors"
-	"flag"
 	"fmt"
 	"log/slog"
 
-	"github.com/donaldgifford/rfc-api/internal/config"
 	"github.com/donaldgifford/rfc-api/internal/domain/registry"
 	"github.com/donaldgifford/rfc-api/internal/obs"
 	"github.com/donaldgifford/rfc-api/internal/parser"
@@ -26,14 +24,9 @@ import (
 //   - 1 on startup failure (bad config, can't open pool)
 //   - 2 on shutdown-budget exhaustion (wired via errShutdownTimedOut)
 func runWork(ctx context.Context, logger *slog.Logger, args []string) error {
-	flags := flag.NewFlagSet("work", flag.ContinueOnError)
-	if err := flags.Parse(args); err != nil {
-		return fmt.Errorf("parse work flags: %w", err)
-	}
-
-	cfg, err := config.Load(flags.Args(), config.DefaultFilePath)
+	cfg, err := loadCmdConfig("work", args)
 	if err != nil {
-		return fmt.Errorf("load config: %w", err)
+		return err
 	}
 
 	logger = buildLogger(cfg.Log,

@@ -278,3 +278,27 @@ func TestLoad_FlagParseError(t *testing.T) {
 		t.Fatal("Load() error = nil, want flag parse error")
 	}
 }
+
+func TestResolveFilePath(t *testing.T) {
+	t.Run("flag_wins_over_env_and_default", func(t *testing.T) {
+		t.Setenv("RFC_API_CONFIG", "/etc/from-env.yaml")
+		got := config.ResolveFilePath("/from/flag.yaml")
+		if got != "/from/flag.yaml" {
+			t.Errorf("got %q, want %q", got, "/from/flag.yaml")
+		}
+	})
+	t.Run("env_wins_over_default", func(t *testing.T) {
+		t.Setenv("RFC_API_CONFIG", "/etc/from-env.yaml")
+		got := config.ResolveFilePath("")
+		if got != "/etc/from-env.yaml" {
+			t.Errorf("got %q, want %q", got, "/etc/from-env.yaml")
+		}
+	})
+	t.Run("default_when_nothing_set", func(t *testing.T) {
+		t.Setenv("RFC_API_CONFIG", "")
+		got := config.ResolveFilePath("")
+		if got != config.DefaultFilePath {
+			t.Errorf("got %q, want %q", got, config.DefaultFilePath)
+		}
+	})
+}

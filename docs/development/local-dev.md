@@ -9,11 +9,12 @@ For the higher-level setup + requirements overview, see
 ## One-command getting started
 
 ```sh
-mise install              # pin Go / golangci-lint / goimports / goreleaser...
-cp .env.example .env      # local config; gitignored, edit freely
-make dev-up               # compose-up + wait-for-postgres + migrate
-make serve                # builds + runs `rfc-api serve` against compose deps
-                          # (use `make work` in a second shell for the sync worker)
+mise install                          # pin Go / golangci-lint / goimports / goreleaser...
+cp .env.example .env                  # local env; gitignored, edit freely
+cp config.example.yaml config.yaml    # local YAML config; gitignored, edit freely
+make dev-up                           # compose-up + wait-for-postgres + migrate
+make serve                            # builds + runs `rfc-api serve` against compose deps
+                                      # (use `make work` in a second shell for the sync worker)
 ```
 
 `make dev-up` is the umbrella for first-time / fresh-checkout setup: it
@@ -28,6 +29,24 @@ For an unbuilt-binary equivalent, `go run ./cmd/rfc-api serve` works too.
 If you only need to start the deps without migrating (e.g. you're about
 to run `make migrate-down` or test against an empty DB), use
 `make compose-up` directly.
+
+### Config file: where the source repos live
+
+`worker.source_repos` (the list of GitHub repos the worker pulls docs
+from) only lives in YAML — slices of structs can't be expressed as env
+vars. Everything else can be either in YAML or env; env wins. The
+binary looks up the config path with this precedence:
+
+1. `-c <path>` CLI flag (e.g. `rfc-api serve -c ./my-config.yaml`)
+2. `RFC_API_CONFIG` env var (the canonical spot — set in `.env`)
+3. `/etc/rfc-api/config.yaml` (the prod default)
+
+For local dev, uncomment `RFC_API_CONFIG=./config.yaml` in `.env` after
+the `cp config.example.yaml config.yaml` step. `config.example.yaml`
+ships a self-feeding setup pointing at this very repo's `docs/` tree —
+useful for sanity-checking the ingest pipeline without external
+dependencies. Edit `worker.source_repos` to point at your actual doc
+repos and re-run `make work`.
 
 After `make serve`:
 

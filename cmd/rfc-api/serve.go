@@ -8,7 +8,6 @@ import (
 
 	"golang.org/x/sync/errgroup"
 
-	"github.com/donaldgifford/rfc-api/internal/config"
 	"github.com/donaldgifford/rfc-api/internal/domain/registry"
 	"github.com/donaldgifford/rfc-api/internal/obs"
 	meilisearchx "github.com/donaldgifford/rfc-api/internal/search/meilisearch"
@@ -26,9 +25,9 @@ import (
 // either server's fatal error cancels the other, and drains both on
 // signal-induced ctx cancellation within RFC_API_SHUTDOWN_TIMEOUT.
 func runServe(ctx context.Context, logger *slog.Logger, args []string) error {
-	cfg, err := config.Load(args, config.DefaultFilePath)
+	cfg, err := loadCmdConfig("serve", args)
 	if err != nil {
-		return fmt.Errorf("load config: %w", err)
+		return err
 	}
 
 	// Rebuild the logger now that we know the configured level and
