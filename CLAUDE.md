@@ -88,7 +88,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## Local development
 
-See [`docs/development/`](./docs/development/) for the setup + requirements overview, or jump straight to [`docs/development/local-dev.md`](./docs/development/local-dev.md) for the runbook (port map, compose profiles, pprof workflow, troubleshooting). TL;DR: `mise install && cp .env.example .env && make compose-up && make serve` (the matching worker is `make work`).
+See [`docs/development/`](./docs/development/) for the setup + requirements overview, or jump straight to [`docs/development/local-dev.md`](./docs/development/local-dev.md) for the runbook (port map, compose profiles, pprof workflow, troubleshooting). TL;DR: `mise install && cp .env.example .env && make dev-up && make serve` (`dev-up` chains `compose-up` + wait-for-postgres + `migrate`; the matching worker is `make work`).
 
 Dev deps run in `docker compose` via profile-tagged services (`postgres`, `meilisearch` default; `keycloak`, `otel-collector`, `jaeger`, `prometheus`, `grafana`, `loki`, `alloy` opt-in). The `rfc-api` binary itself is **never** run inside compose — always host-run via `go run` or `make run-local`. `docker build` is reserved for goreleaser / CI / release.
 

@@ -37,7 +37,7 @@ installed by `mise install` — you do not need to install Go by hand.
 ```sh
 mise install              # pin Go / golangci-lint / goimports / ...
 cp .env.example .env      # local config; gitignored, edit freely
-make compose-up           # starts Postgres + Meilisearch
+make dev-up               # compose-up + wait-for-postgres + migrate
 make serve                # builds + runs `rfc-api serve` against compose deps
                           # (`make work` for the sync worker)
 ```

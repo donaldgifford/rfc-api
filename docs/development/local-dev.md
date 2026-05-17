@@ -11,13 +11,23 @@ For the higher-level setup + requirements overview, see
 ```sh
 mise install              # pin Go / golangci-lint / goimports / goreleaser...
 cp .env.example .env      # local config; gitignored, edit freely
-make compose-up           # starts postgres + meilisearch
+make dev-up               # compose-up + wait-for-postgres + migrate
 make serve                # builds + runs `rfc-api serve` against compose deps
                           # (use `make work` in a second shell for the sync worker)
 ```
 
+`make dev-up` is the umbrella for first-time / fresh-checkout setup: it
+starts Postgres + Meilisearch via compose, waits for the Postgres
+healthcheck to report ready, then applies the embedded migrations.
+Idempotent — safe to re-run between sessions; `migrate` will report
+"already up to date" if nothing changed.
+
 `make serve` reads `.env` and connects to the compose Postgres + Meilisearch.
 For an unbuilt-binary equivalent, `go run ./cmd/rfc-api serve` works too.
+
+If you only need to start the deps without migrating (e.g. you're about
+to run `make migrate-down` or test against an empty DB), use
+`make compose-up` directly.
 
 After `make serve`:
 

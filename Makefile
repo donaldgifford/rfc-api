@@ -142,6 +142,7 @@ COMPOSE_ALL_PROFILES := --profile auth --profile tracing --profile metrics --pro
 
 .PHONY: compose-up compose-up-auth compose-up-obs compose-up-full
 .PHONY: compose-down compose-nuke compose-logs
+.PHONY: dev-up dev-down wait-postgres
 
 compose-up: ## Start default dependencies (postgres + meilisearch)
 	@ $(MAKE) --no-print-directory log-$@
@@ -179,6 +180,32 @@ compose-nuke: ## Stop services and DELETE all volumes (use CONFIRM=1 to skip pro
 compose-logs: ## Tail compose logs (usage: make compose-logs SERVICE=postgres; omit SERVICE for all)
 	@ $(MAKE) --no-print-directory log-$@
 	@docker compose logs -f --tail=100 $(SERVICE)
+
+# wait-postgres polls the compose-managed Postgres healthcheck until it
+# reports healthy. Compose returns immediately from `up -d`, but the
+# Postgres container needs ~5-10s before it accepts connections; running
+# `migrate` against an unready DB fails with a connection-refused error
+# that's confusing on a fresh checkout. 30s is well over the
+# compose.yaml `start_period: 10s` budget.
+wait-postgres:
+	@printf "waiting for postgres to be healthy"
+	@for i in $$(seq 1 30); do \
+		status=$$(docker compose ps --format '{{.Health}}' postgres 2>/dev/null); \
+		if [ "$$status" = "healthy" ]; then echo " ✓"; exit 0; fi; \
+		printf "."; \
+		sleep 1; \
+	done; \
+	echo " timed out"; \
+	docker compose ps postgres; \
+	exit 1
+
+dev-up: ## One-shot: compose-up + wait-postgres + migrate. Use this on a fresh checkout
+	@ $(MAKE) --no-print-directory log-$@
+	@ $(MAKE) --no-print-directory compose-up
+	@ $(MAKE) --no-print-directory wait-postgres
+	@ $(MAKE) --no-print-directory migrate
+
+dev-down: compose-down ## One-shot: stop compose services (keeps volumes — use compose-nuke to wipe)
 
 ###############
 ##@ Database
