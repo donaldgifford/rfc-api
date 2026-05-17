@@ -127,21 +127,39 @@ func authedClient(cfg *Config) (*http.Client, error) {
 	}
 
 	if hasApp {
-		appID, err := strconv.ParseInt(cfg.AppID, 10, 64)
-		if err != nil {
-			return nil, fmt.Errorf("parse AppID: %w", err)
-		}
-		instID, err := strconv.ParseInt(cfg.InstallationID, 10, 64)
-		if err != nil {
-			return nil, fmt.Errorf("parse InstallationID: %w", err)
-		}
-		tr, err := ghinstallation.New(base.Transport, appID, instID, cfg.PrivateKey)
-		if err != nil {
-			return nil, fmt.Errorf("ghinstallation: %w", err)
-		}
-		return &http.Client{Transport: tr, Timeout: base.Timeout}, nil
+		return appClient(cfg, base)
 	}
 	return patClient(cfg.Token, base), nil
+}
+
+// appClient builds the GitHub App-auth http.Client. Split out of
+// authedClient because the parse + transport-resolve + wrap steps
+// stack three potential errors deep enough to trip the nestif
+// linter, and the App branch is also the one with a non-obvious
+// pitfall worth its own godoc.
+func appClient(cfg *Config, base *http.Client) (*http.Client, error) {
+	appID, err := strconv.ParseInt(cfg.AppID, 10, 64)
+	if err != nil {
+		return nil, fmt.Errorf("parse AppID: %w", err)
+	}
+	instID, err := strconv.ParseInt(cfg.InstallationID, 10, 64)
+	if err != nil {
+		return nil, fmt.Errorf("parse InstallationID: %w", err)
+	}
+	// ghinstallation does not fall back to http.DefaultTransport
+	// when given a nil base — the first RoundTrip segfaults inside
+	// AppsTransport. A zero-value http.Client (the cfg.HTTPClient
+	// == nil branch in authedClient) has a nil Transport, so
+	// resolve that before handing off.
+	baseTransport := base.Transport
+	if baseTransport == nil {
+		baseTransport = http.DefaultTransport
+	}
+	tr, err := ghinstallation.New(baseTransport, appID, instID, cfg.PrivateKey)
+	if err != nil {
+		return nil, fmt.Errorf("ghinstallation: %w", err)
+	}
+	return &http.Client{Transport: tr, Timeout: base.Timeout}, nil
 }
 
 // githubAPI constructs the go-github client, optionally pointed at
